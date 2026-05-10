@@ -1,0 +1,19 @@
+import { AlertTriangle } from 'lucide-react'
+
+interface Props {
+  text: string
+}
+
+export default function ErrorBubble({ text }: Props) {
+  return (
+    <div className="flex gap-3 items-start">
+      <div className="w-7 h-7 rounded-lg bg-red-500/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+        <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+      </div>
+
+      <div className="bg-red-500/5 border border-red-500/20 rounded-2xl rounded-tl-sm px-4 py-3">
+        <p className="text-sm text-red-300">{text}</p>
+      </div>
+    </div>
+  )
+}
