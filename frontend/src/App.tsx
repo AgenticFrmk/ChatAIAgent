@@ -3,6 +3,7 @@ import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
 import AboutPage from './pages/AboutPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import BillingPage from './pages/BillingPage'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/chat" element={<ChatPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
+        <Route path="/billing" element={<BillingPage />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>

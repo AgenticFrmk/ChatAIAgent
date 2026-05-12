@@ -1,15 +1,19 @@
-import { Terminal, LogOut, RotateCcw, BarChart2, BookOpen, Info } from 'lucide-react'
+import { Terminal, LogOut, RotateCcw, BarChart2, BookOpen, Info, DollarSign } from 'lucide-react'
+import BudgetGauge from './BudgetGauge'
+import type { BudgetState } from '../lib/types'
 
 interface Props {
   username: string
   isRunning: boolean
   awaitingReply: boolean
   hasMessages: boolean
+  budget: BudgetState | null
+  budgetHistory: { tokens: number; ts: number }[]
   onReset: () => void
   onLogout: () => void
 }
 
-export default function ChatHeader({ username, isRunning, awaitingReply, hasMessages, onReset, onLogout }: Props) {
+export default function ChatHeader({ username, isRunning, awaitingReply, hasMessages, budget, budgetHistory, onReset, onLogout }: Props) {
   const statusLabel = awaitingReply
     ? 'Awaiting reply'
     : isRunning
@@ -47,6 +51,8 @@ export default function ChatHeader({ username, isRunning, awaitingReply, hasMess
           {statusLabel}
         </span>
 
+        <BudgetGauge budget={budget} history={budgetHistory} />
+
         {/* New chat — only when idle and has history */}
         {!isRunning && hasMessages && (
           <button
@@ -64,6 +70,14 @@ export default function ChatHeader({ username, isRunning, awaitingReply, hasMess
           className="p-2 rounded-lg text-[#8b949e] hover:text-purple-400 hover:bg-[#161b22] transition-colors"
         >
           <BarChart2 className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={() => window.open('/billing', '_blank')}
+          title="Billing"
+          className="p-2 rounded-lg text-[#8b949e] hover:text-emerald-400 hover:bg-[#161b22] transition-colors"
+        >
+          <DollarSign className="w-4 h-4" />
         </button>
 
         <a

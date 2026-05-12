@@ -58,49 +58,16 @@ function buildParams(range: TimeRange, extra?: Record<string, string | number>) 
   return p.toString()
 }
 
-const MOCK_ROI: RoiSummary = {
-  mttr_seconds: 287,
-  mttr_delta_pct: -68,
-  autonomous_resolution_rate: 0.82,
-  escalation_rate: 0.18,
-  engineer_hours_saved: 41.5,
-  false_action_rate: 0.03,
-  run_count: 24,
-}
-
-const MOCK_PERF: PerfSummary = {
-  plan_accuracy: 0.91,
-  step_efficiency: 0.87,
-  avg_latency_ms: { intent: 420, plan: 1840, execution: 3200 },
-  confidence_calibration: 0.88,
-  retry_rate: 0.06,
-  run_count: 24,
-}
-
-const MOCK_RUNS: RunPage = {
-  total: 4,
-  page: 1,
-  size: 10,
-  runs: [
-    { run_id: 'run-001', timestamp: new Date(Date.now() - 3600000).toISOString(),  mttr_seconds: 342, resolution_type: 'AUTONOMOUS', plan_accurate: true,  step_efficiency: 0.90, outcome: 'COMPLETED' },
-    { run_id: 'run-002', timestamp: new Date(Date.now() - 86400000).toISOString(), mttr_seconds: 218, resolution_type: 'AUTONOMOUS', plan_accurate: true,  step_efficiency: 0.95, outcome: 'COMPLETED' },
-    { run_id: 'run-003', timestamp: new Date(Date.now() - 172800000).toISOString(),mttr_seconds: 287, resolution_type: 'HITL',       plan_accurate: true,  step_efficiency: 0.82, outcome: 'COMPLETED' },
-    { run_id: 'run-004', timestamp: new Date(Date.now() - 259200000).toISOString(),mttr_seconds: 95,  resolution_type: 'AUTONOMOUS', plan_accurate: false, step_efficiency: 0.60, outcome: 'FAILED' },
-  ],
-}
-
 export function useAnalytics(agentId: string, range: TimeRange) {
   const [roi, setRoi] = useState<RoiSummary | null>(null)
   const [perf, setPerf] = useState<PerfSummary | null>(null)
   const [runs, setRuns] = useState<RunPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [demo, setDemo] = useState(false)
 
   useEffect(() => {
     setLoading(true)
     setError(null)
-    setDemo(false)
     const params = buildParams(range)
     const runsParams = buildParams(range, { page: 1, size: 10 })
 
@@ -122,23 +89,13 @@ export function useAnalytics(agentId: string, range: TimeRange) {
       }),
     ])
       .then(([roiData, perfData, runsData]) => {
-        const noData =
-          (!roiData && !perfData && !runsData) ||
-          ((roiData?.run_count ?? 0) === 0 && (perfData?.run_count ?? 0) === 0)
-        if (noData) {
-          setRoi(MOCK_ROI)
-          setPerf(MOCK_PERF)
-          setRuns(MOCK_RUNS)
-          setDemo(true)
-        } else {
-          setRoi(roiData)
-          setPerf(perfData)
-          setRuns(runsData)
-        }
+        setRoi(roiData)
+        setPerf(perfData)
+        setRuns(runsData)
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
   }, [agentId, range.from.toISOString(), range.to.toISOString()])
 
-  return { roi, perf, runs, loading, error, demo }
+  return { roi, perf, runs, loading, error }
 }

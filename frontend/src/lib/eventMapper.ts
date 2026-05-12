@@ -63,7 +63,13 @@ export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
   const output = rawData?.['output'] as Record<string, unknown> | undefined
 
   if (ev.event === 'on_chain_start') {
-    return [{ name: 'node_start', data: { node } }]
+    if (node === 'execute_step') {
+      const input = rawData?.['input'] as Record<string, unknown> | undefined
+      const step = input?.['step'] as Record<string, unknown> | undefined
+      const toolName = (step?.['tool_name'] ?? step?.['tool']) as string | undefined
+      if (toolName) return [{ name: 'step_start', data: { tool: toolName } }]
+    }
+    return []
   }
   if (ev.event !== 'on_chain_end') return []
 
@@ -96,7 +102,7 @@ export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
         name: 'step_result',
         data: {
           step_id,
-          tool:    result['tool'] ?? '',
+          tool:    (result['tool_name'] ?? result['tool'] ?? '') as string,
           status:  result['status'] ?? 'done',
           output:  result['output'] ?? result,
           input:   result['inputs'] ?? result['input'] ?? {},

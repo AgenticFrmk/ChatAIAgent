@@ -44,7 +44,9 @@ export function formatPlan(steps: PlanStep[]): string {
 }
 
 export function stepLine(result: StepResult): string {
-  const icon = result.status === 'success' ? '✓' : result.status === 'error' ? '✗' : '⏳'
+  const icon = result.status === 'completed' || result.status === 'success' ? '✓'
+    : result.status === 'failed' || result.status === 'error' ? '✗'
+    : '⏳'
   const detail = summariseOutput(result.output)
   return `${icon} **${result.tool}**${detail ? ` — ${detail}` : ''}`
 }

@@ -33,6 +33,15 @@ export interface ReportData {
   metrics: Record<string, number | undefined>
 }
 
+export interface BudgetState {
+  budget_used: number
+  estimated_tokens: number
+  context_limit: number
+  compacted: boolean
+  messages_evicted: number
+  strategy: string
+}
+
 // ── Chat message model ────────────────────────────────────────────────────
 // All content is plain text (markdown). No special card types.
 

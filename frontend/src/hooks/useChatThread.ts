@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import { invokeStream, resumeStream, getEvents } from '../lib/gateway'
 import { mapGatewayEvent } from '../lib/eventMapper'
 import { formatEntities, formatPlan, formatReport, stepLine } from '../lib/formatter'
-import type { ChatMessage, EntityMap, PlanStep, ReportData, StepResult } from '../lib/types'
+import type { BudgetState, ChatMessage, EntityMap, PlanStep, ReportData, StepResult } from '../lib/types'
 
 type HitlKind = 'entity' | 'clarification' | 'plan' | 'analysis' | null
 
@@ -11,6 +11,8 @@ export interface UseChatThreadReturn {
   awaitingReply: boolean
   placeholder:   string
   isRunning:     boolean
+  budget:        BudgetState | null
+  budgetHistory: { tokens: number; ts: number }[]
   send:          (text: string) => Promise<void>
   reset:         () => void
 }
@@ -28,9 +30,11 @@ function make(
 }
 
 export function useChatThread(token: string | null): UseChatThreadReturn {
-  const [messages, setMessages]   = useState<ChatMessage[]>([])
-  const [isRunning, setIsRunning] = useState(false)
-  const [hitlKind, setHitlKind]   = useState<HitlKind>(null)
+  const [messages, setMessages]         = useState<ChatMessage[]>([])
+  const [isRunning, setIsRunning]       = useState(false)
+  const [hitlKind, setHitlKind]         = useState<HitlKind>(null)
+  const [budget, setBudget]             = useState<BudgetState | null>(null)
+  const [budgetHistory, setBudgetHistory] = useState<{ tokens: number; ts: number }[]>([])
 
   const threadIdRef     = useRef<string | null>(null)
   const lastSeenRef     = useRef(0)
@@ -71,9 +75,35 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     setMessages(prev => thId ? prev.map(x => x.id === thId ? m : x) : [...prev, m])
   }, [])
 
+  // ── replaceOrAppendStepLine ────────────────────────────────────────────
+  // For step results: finds and replaces the running ⏳ line for the same tool,
+  // or appends if no running line exists yet.
+  const replaceOrAppendStepLine = useCallback((tool: string, resultLine: string) => {
+    const execId = executingIdRef.current
+    const runningPrefix = `⏳ **${tool}**`
+    if (execId) {
+      setMessages(prev => prev.map(m => {
+        if (m.id !== execId) return m
+        const lines = (m.text ?? '').split('\n')
+        const idx = lines.findIndex(l => l.startsWith(runningPrefix))
+        if (idx >= 0) {
+          lines[idx] = resultLine
+          return { ...m, text: lines.join('\n') }
+        }
+        return { ...m, text: (m.text ?? '') + '\n' + resultLine }
+      }))
+      return
+    }
+    appendStepLine(resultLine)
+  }, [appendStepLine])
+
   // ── handle ─────────────────────────────────────────────────────────────
   const handle = useCallback((type: string, data: Record<string, unknown>) => {
     switch (type) {
+      case 'step_start':
+        appendStepLine(`⏳ **${data.tool as string}** — running…`)
+        break
+
       case 'entity_confirm':
         replaceThinking(formatEntities(data.entities as EntityMap))
         setHitlKind('entity')
@@ -95,9 +125,11 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
         setHitlKind('analysis')
         break
 
-      case 'step_result':
-        appendStepLine(stepLine(data as unknown as StepResult))
+      case 'step_result': {
+        const r = data as unknown as StepResult
+        replaceOrAppendStepLine(r.tool, stepLine(r))
         break
+      }
 
       case 'report':
         executingIdRef.current = null
@@ -112,11 +144,18 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
         setHitlKind(null)
         break
 
+      case 'budget': {
+        const b = data as unknown as BudgetState
+        setBudget(b)
+        setBudgetHistory(prev => [...prev, { tokens: b.estimated_tokens, ts: Date.now() }])
+        break
+      }
+
       case 'done':
         setIsRunning(false)
         break
     }
-  }, [replaceThinking, appendStepLine])
+  }, [replaceThinking, appendStepLine, replaceOrAppendStepLine])
 
   // ── startPolling ────────────────────────────────────────────────────────
   const startPolling = useCallback((threadId: string) => {
@@ -196,6 +235,8 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     setMessages([])
     setIsRunning(false)
     setHitlKind(null)
+    setBudget(null)
+    setBudgetHistory([])
   }, [])
 
   // ── derived state ────────────────────────────────────────────────────────
@@ -205,9 +246,9 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     ? ''
     : hitlKind === 'entity'        ? 'Confirm or correct the extracted details…'
     : hitlKind === 'clarification' ? 'Type your answer…'
-    : hitlKind === 'plan'          ? "Reply 'yes' to execute, or describe changes…"
+    : hitlKind === 'plan'          ? "Reply 'yes' to execute, 'no' to cancel, or describe changes…"
     : hitlKind === 'analysis'      ? "Reply 'yes' to apply fixes, or 'no' to stop…"
     : 'Describe the incident…'
 
-  return { messages, awaitingReply, placeholder, isRunning, send, reset }
+  return { messages, awaitingReply, placeholder, isRunning, budget, budgetHistory, send, reset }
 }

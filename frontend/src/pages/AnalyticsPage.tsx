@@ -21,7 +21,7 @@ function makeRange(days: number): TimeRange {
 export default function AnalyticsPage() {
   const [rangeDays, setRangeDays] = useState(30)
   const range    = useMemo(() => makeRange(rangeDays), [rangeDays])
-  const { roi, perf, runs, loading, error, demo } = useAnalytics('chat-ai-agent', range)
+  const { roi, perf, runs, loading, error } = useAnalytics('chat-ai-agent', range)
   const contract = useEvalContract('connectivity')
 
   return (
@@ -40,11 +40,6 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          {demo && (
-            <span className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1">
-              Demo data — no real runs yet
-            </span>
-          )}
           {/* Range selector */}
           <div className="flex items-center gap-1 bg-[#161b22] border border-[#1c2333] rounded-lg p-1">
             {RANGES.map(r => (
