@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getHistory } from '../lib/gateway'
 
 export interface RoiSummary {
   mttr_seconds: number
@@ -58,44 +59,54 @@ function buildParams(range: TimeRange, extra?: Record<string, string | number>) 
   return p.toString()
 }
 
-export function useAnalytics(agentId: string, range: TimeRange) {
-  const [roi, setRoi] = useState<RoiSummary | null>(null)
+function toRunPage(rows: Record<string, unknown>[], range: TimeRange): RunPage {
+  const from = range.from.getTime()
+  const to   = range.to.getTime()
+
+  const filtered = rows.filter(r => {
+    const ts = new Date(r['created_at'] as string).getTime()
+    return ts >= from && ts <= to
+  })
+
+  const runs: RunRecord[] = filtered.map(r => {
+    const toolResults = (r['tool_results'] as Record<string, Record<string, unknown>> | null) ?? {}
+    const total = Object.keys(toolResults).length
+    const succeeded = Object.values(toolResults).filter(v => v['status'] === 'completed').length
+    return {
+      run_id:          String(r['plan_id'] ?? ''),
+      timestamp:       String(r['created_at'] ?? ''),
+      mttr_seconds:    0,
+      resolution_type: r['outcome'] === 'COMPLETED' ? 'autonomous' : 'failed',
+      plan_accurate:   r['outcome'] === 'COMPLETED',
+      step_efficiency: total > 0 ? succeeded / total : 0,
+      outcome:         r['outcome'] === 'COMPLETED' ? 'resolved' : 'failed',
+    }
+  })
+
+  return { runs, total: runs.length, page: 1, size: runs.length }
+}
+
+export function useAnalytics(_agentId: string, range: TimeRange, token: string | null = null) {
+  const [roi, setRoi]   = useState<RoiSummary | null>(null)
   const [perf, setPerf] = useState<PerfSummary | null>(null)
   const [runs, setRuns] = useState<RunPage | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError]     = useState<string | null>(null)
 
   useEffect(() => {
+    if (!token) return
     setLoading(true)
     setError(null)
-    const params = buildParams(range)
-    const runsParams = buildParams(range, { page: 1, size: 10 })
 
-    Promise.all([
-      fetch(`/api/agent-perf/${agentId}/roi?${params}`).then(r => {
-        if (r.status === 503) return null
-        if (!r.ok) throw new Error(`roi ${r.status}`)
-        return r.json() as Promise<RoiSummary>
-      }),
-      fetch(`/api/agent-perf/${agentId}/perf?${params}`).then(r => {
-        if (r.status === 503) return null
-        if (!r.ok) throw new Error(`perf ${r.status}`)
-        return r.json() as Promise<PerfSummary>
-      }),
-      fetch(`/api/agent-perf/${agentId}/runs?${runsParams}`).then(r => {
-        if (r.status === 503) return null
-        if (!r.ok) throw new Error(`runs ${r.status}`)
-        return r.json() as Promise<RunPage>
-      }),
-    ])
-      .then(([roiData, perfData, runsData]) => {
-        setRoi(roiData)
-        setPerf(perfData)
-        setRuns(runsData)
+    getHistory(token)
+      .then(rows => {
+        setRuns(toRunPage(rows, range))
+        setRoi(null)
+        setPerf(null)
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [agentId, range.from.toISOString(), range.to.toISOString()])
+  }, [range.from.toISOString(), range.to.toISOString()])
 
   return { roi, perf, runs, loading, error }
 }

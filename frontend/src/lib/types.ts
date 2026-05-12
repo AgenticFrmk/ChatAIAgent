@@ -3,25 +3,13 @@ export interface Session {
   username: string
 }
 
-export interface PlanStep {
-  id: string
-  tool: string
-  name: string
-  description: string
-  parameters: Record<string, unknown>
-  expected_output: string
-  dependencies: string[]
-  phase?: 'analysis' | 'remediation'
-  status?: string
-}
-
-export interface StepResult {
-  step_id: string
-  tool: string
-  status: string
-  output: unknown
-  input?: Record<string, unknown>
-  api_url?: string | null
+export interface Tao {
+  step_number: number
+  reasoning: string
+  tool_name: string
+  inputs: Record<string, unknown>
+  tool_output: string
+  finding: string
 }
 
 export interface EntityMap {
@@ -64,3 +52,5 @@ export type AgentPhase =
   | 'executing'
   | 'complete'
   | 'error'
+
+export type HitlKind = 'entity' | 'clarification' | 'step_review' | 'analysis_summary' | 'propose_fix' | null
