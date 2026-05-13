@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { getHistory } from '../lib/gateway'
 
 export interface RoiSummary {
   mttr_seconds: number
@@ -48,45 +47,24 @@ export function last30Days(): TimeRange {
   return { from, to }
 }
 
-function buildParams(range: TimeRange, extra?: Record<string, string | number>) {
+const SLM_BASE = (import.meta.env.VITE_SLM_PLATFORM_URL as string | undefined) ?? '/api'
+
+function perfUrl(agentId: string, endpoint: string, range: TimeRange, extra?: Record<string, string | number>) {
   const p = new URLSearchParams({
     from_dt: range.from.toISOString(),
     to_dt: range.to.toISOString(),
-    ...Object.fromEntries(
-      Object.entries(extra ?? {}).map(([k, v]) => [k, String(v)])
-    ),
+    ...Object.fromEntries(Object.entries(extra ?? {}).map(([k, v]) => [k, String(v)])),
   })
-  return p.toString()
+  return `${SLM_BASE}/agent-perf/${encodeURIComponent(agentId)}/${endpoint}?${p}`
 }
 
-function toRunPage(rows: Record<string, unknown>[], range: TimeRange): RunPage {
-  const from = range.from.getTime()
-  const to   = range.to.getTime()
-
-  const filtered = rows.filter(r => {
-    const ts = new Date(r['created_at'] as string).getTime()
-    return ts >= from && ts <= to
-  })
-
-  const runs: RunRecord[] = filtered.map(r => {
-    const toolResults = (r['tool_results'] as Record<string, Record<string, unknown>> | null) ?? {}
-    const total = Object.keys(toolResults).length
-    const succeeded = Object.values(toolResults).filter(v => v['status'] === 'completed').length
-    return {
-      run_id:          String(r['plan_id'] ?? ''),
-      timestamp:       String(r['created_at'] ?? ''),
-      mttr_seconds:    0,
-      resolution_type: r['outcome'] === 'COMPLETED' ? 'autonomous' : 'failed',
-      plan_accurate:   r['outcome'] === 'COMPLETED',
-      step_efficiency: total > 0 ? succeeded / total : 0,
-      outcome:         r['outcome'] === 'COMPLETED' ? 'resolved' : 'failed',
-    }
-  })
-
-  return { runs, total: runs.length, page: 1, size: runs.length }
+async function fetchJson<T>(url: string): Promise<T> {
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json() as Promise<T>
 }
 
-export function useAnalytics(_agentId: string, range: TimeRange, token: string | null = null) {
+export function useAnalytics(agentId: string, range: TimeRange, token: string | null = null) {
   const [roi, setRoi]   = useState<RoiSummary | null>(null)
   const [perf, setPerf] = useState<PerfSummary | null>(null)
   const [runs, setRuns] = useState<RunPage | null>(null)
@@ -98,15 +76,19 @@ export function useAnalytics(_agentId: string, range: TimeRange, token: string |
     setLoading(true)
     setError(null)
 
-    getHistory(token)
-      .then(rows => {
-        setRuns(toRunPage(rows, range))
-        setRoi(null)
-        setPerf(null)
+    Promise.all([
+      fetchJson<RoiSummary>(perfUrl(agentId, 'roi', range)),
+      fetchJson<PerfSummary>(perfUrl(agentId, 'perf', range)),
+      fetchJson<RunPage>(perfUrl(agentId, 'runs', range, { page: 1, size: 50 })),
+    ])
+      .then(([roiData, perfData, runsData]) => {
+        setRoi(roiData)
+        setPerf(perfData)
+        setRuns(runsData)
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false))
-  }, [range.from.toISOString(), range.to.toISOString()])
+  }, [agentId, range.from.toISOString(), range.to.toISOString(), token])
 
   return { roi, perf, runs, loading, error }
 }

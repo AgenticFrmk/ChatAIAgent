@@ -26,6 +26,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${AUTH_DB_PASSWORD:-postgres}@postgres-auth:5432/auth_service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       RSA_KEY_ID: ${RSA_KEY_ID:-key-2024-01}
       RSA_KEY_DIR: /keys
       TOKEN_EXPIRE_MINUTES: ${TOKEN_EXPIRE_MINUTES:-60}
@@ -64,6 +65,7 @@ services:
         condition: service_started
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${REGISTRY_DB_PASSWORD:-postgres}@postgres-registry:5432/registry_service
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       JWKS_URL: http://auth-service:9000/.well-known/jwks.json
       AUTH_SERVICE_TOKEN_URL: http://auth-service:9000/auth/token
       REGISTRY_SERVICE_URL: http://registry-service:8001
@@ -138,6 +140,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${SLM_DB_PASSWORD:-postgres}@postgres-slm:5432/slm_platform
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       SLMPLATFORM_API_TOKEN: ${SLMPLATFORM_API_TOKEN:-}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
@@ -145,6 +148,16 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+    networks:
+      - agentic
+
+  # ── Jaeger (distributed tracing UI + OTLP collector) ─────────────────────────
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
     networks:
       - agentic
 
@@ -176,9 +189,11 @@ services:
     environment:
       CHECKPOINTER_URL: postgresql://postgres:${AGENTCORE_DB_PASSWORD:-postgres}@postgres-agentcore:5432/agentcore
       REDIS_URL: redis://redis:6379/0
+      JWKS_URL: http://auth-service:9000/.well-known/jwks.json
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       LLM_MODEL: ${AGENT_LLM_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      REGISTRY_URL: http://registry-service:8001
+      REGISTRY_SERVICE_URL: http://registry-service:8001
       REGISTRY_CACHE_TTL_SECONDS: ${REGISTRY_CACHE_TTL_SECONDS:-60}
       REGISTRY_AUTH_URL: http://auth-service:9000
       REGISTRY_USERNAME: ${SEED_USERNAME:-sre-seed@example.com}
@@ -215,6 +230,7 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${GATEWAY_DB_PASSWORD:-postgres}@postgres-gateway:5432/agent_gateway
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       JWKS_URL: http://auth-service:9000/.well-known/jwks.json
       AGENT_BE_URL: http://agentbe:8001
       REDIS_URL: redis://redis:6379/0
