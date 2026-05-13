@@ -1,0 +1,477 @@
+{
+  "consumer": {
+    "name": "ChatAiAgent"
+  },
+  "interactions": [
+    {
+      "description": "a ROI summary request for chat-ai-agent with no data",
+      "providerStates": [
+        {
+          "name": "no run metrics exist for agent chat-ai-agent"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/agent-perf/chat-ai-agent/roi",
+        "query": {
+          "from_dt": [
+            "2026-04-13T00:00:00.000Z"
+          ],
+          "to_dt": [
+            "2026-05-13T00:00:00.000Z"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "autonomous_resolution_rate": 0,
+          "engineer_hours_saved": 0,
+          "escalation_rate": 0,
+          "false_action_rate": 0,
+          "mttr_delta_pct": 0,
+          "mttr_seconds": 0,
+          "run_count": 0
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.autonomous_resolution_rate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.engineer_hours_saved": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.escalation_rate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.false_action_rate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.mttr_delta_pct": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.mttr_seconds": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.run_count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a ROI summary request for chat-ai-agent",
+      "providerStates": [
+        {
+          "name": "run metrics exist for agent chat-ai-agent"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/agent-perf/chat-ai-agent/roi",
+        "query": {
+          "from_dt": [
+            "2026-04-13T00:00:00.000Z"
+          ],
+          "to_dt": [
+            "2026-05-13T00:00:00.000Z"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "autonomous_resolution_rate": 0.82,
+          "engineer_hours_saved": 4.2,
+          "escalation_rate": 0.05,
+          "false_action_rate": 0.01,
+          "mttr_delta_pct": -18.2,
+          "mttr_seconds": 320.5,
+          "run_count": 37
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.autonomous_resolution_rate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.engineer_hours_saved": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.escalation_rate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.false_action_rate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.mttr_delta_pct": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.mttr_seconds": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.run_count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a paginated run history request for chat-ai-agent",
+      "providerStates": [
+        {
+          "name": "run metrics exist for agent chat-ai-agent"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/agent-perf/chat-ai-agent/runs",
+        "query": {
+          "from_dt": [
+            "2026-04-13T00:00:00.000Z"
+          ],
+          "page": [
+            "1"
+          ],
+          "size": [
+            "50"
+          ],
+          "to_dt": [
+            "2026-05-13T00:00:00.000Z"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "page": 1,
+          "runs": [
+            {
+              "mttr_seconds": 312,
+              "outcome": "resolved",
+              "plan_accurate": true,
+              "resolution_type": "autonomous",
+              "run_id": "run-abc123",
+              "step_efficiency": 0.86,
+              "timestamp": "2026-05-13T02:11:51+00:00"
+            }
+          ],
+          "size": 50,
+          "total": 37
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.page": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.runs": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.runs[*].mttr_seconds": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.runs[*].outcome": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.runs[*].plan_accurate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.runs[*].resolution_type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.runs[*].run_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.runs[*].step_efficiency": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.runs[*].timestamp": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.size": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a performance summary request for chat-ai-agent",
+      "providerStates": [
+        {
+          "name": "run metrics exist for agent chat-ai-agent"
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "path": "/agent-perf/chat-ai-agent/perf",
+        "query": {
+          "from_dt": [
+            "2026-04-13T00:00:00.000Z"
+          ],
+          "to_dt": [
+            "2026-05-13T00:00:00.000Z"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "avg_latency_ms": {
+            "execution": 1800,
+            "intent": 210,
+            "plan": 540
+          },
+          "confidence_calibration": 0.79,
+          "plan_accuracy": 0.91,
+          "retry_rate": 0.04,
+          "run_count": 37,
+          "step_efficiency": 0.88
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.avg_latency_ms": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.confidence_calibration": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.plan_accuracy": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.retry_rate": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.run_count": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.step_efficiency": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "12.5.2"
+    },
+    "pactRust": {
+      "ffi": "0.4.20",
+      "models": "1.2.0"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "SLMPlatform"
+  }
+}

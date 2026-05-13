@@ -1,0 +1,304 @@
+{
+  "consumer": {
+    "name": "ChatAiAgent"
+  },
+  "interactions": [
+    {
+      "description": "an invoke stream request",
+      "providerStates": [
+        {
+          "name": "AgentGateway graph is ready"
+        }
+      ],
+      "request": {
+        "body": {
+          "auto_approve": false,
+          "message": "hello"
+        },
+        "headers": {
+          "Authorization": "Bearer eyJ...",
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          }
+        },
+        "method": "POST",
+        "path": "/invoke/stream"
+      },
+      "response": {
+        "body": {
+          "thread_id": "t-abc123"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.thread_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a get events request from index 0",
+      "providerStates": [
+        {
+          "name": "events exist for thread t-1"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": "Bearer eyJ..."
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "query": {}
+        },
+        "method": "GET",
+        "path": "/events/t-1",
+        "query": {
+          "from": [
+            "0"
+          ]
+        }
+      },
+      "response": {
+        "body": {
+          "events": [
+            {
+              "index": 0,
+              "payload": {
+                "type": "done"
+              }
+            }
+          ],
+          "total": 1
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.events": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$.events[*].index": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.events[*].payload": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.total": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a get history request with limit 100",
+      "providerStates": [
+        {
+          "name": "session history exists"
+        }
+      ],
+      "request": {
+        "headers": {
+          "Authorization": "Bearer eyJ..."
+        },
+        "matchingRules": {
+          "header": {
+            "Authorization": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "query": {}
+        },
+        "method": "GET",
+        "path": "/history",
+        "query": {
+          "limit": [
+            "100"
+          ]
+        }
+      },
+      "response": {
+        "body": [
+          {
+            "thread_id": "t-1",
+            "user_id": "user-a"
+          }
+        ],
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type",
+                  "min": 1
+                }
+              ]
+            },
+            "$[*].thread_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$[*].user_id": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    },
+    {
+      "description": "a login request with valid credentials",
+      "providerStates": [
+        {
+          "name": "valid user credentials exist"
+        }
+      ],
+      "request": {
+        "body": "username=alice&password=secret&grant_type=password",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        "method": "POST",
+        "path": "/auth/token"
+      },
+      "response": {
+        "body": {
+          "access_token": "eyJ...",
+          "token_type": "bearer"
+        },
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "matchingRules": {
+          "body": {
+            "$.access_token": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.token_type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "header": {
+            "Content-Type": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            }
+          },
+          "status": {}
+        },
+        "status": 200
+      }
+    }
+  ],
+  "metadata": {
+    "pact-js": {
+      "version": "12.5.2"
+    },
+    "pactRust": {
+      "ffi": "0.4.20",
+      "models": "1.2.0"
+    },
+    "pactSpecification": {
+      "version": "3.0.0"
+    }
+  },
+  "provider": {
+    "name": "AgentGateway"
+  }
+}
