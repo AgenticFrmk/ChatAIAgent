@@ -29,29 +29,56 @@ export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
   if (ev.type === 'interrupt') {
     const interrupts = ev.interrupts ?? []
     const next = ev.next ?? []
+    const payload = interrupts[0] ?? {}
 
-    // entity_confirm interrupt (new HITL gate #2)
-    // Payload: {entities: {...}}  set by entity_confirm.py interrupt()
+    // entity_confirm — payload has {entities: {...}}
     if (next.includes('entity_confirm')) {
-      const payload = interrupts[0] ?? {}
       return [{ name: 'entity_confirm', data: { entities: payload['entities'] ?? {} } }]
     }
 
-    // clarify interrupt (HITL gate #1)
-    // Payload: {question: "..."} set by clarify.py interrupt()
+    // clarify — payload has {question: "..."}
     const clarification = interrupts.find(i => typeof i['question'] === 'string')
     if (clarification) {
       return [{ name: 'clarification_needed', data: { question: clarification['question'] as string } }]
     }
 
-    // analysis_review interrupt (HITL gate between analysis and remediation)
-    if (next.includes('analysis_review')) {
-      const payload = interrupts[0] ?? {}
-      return [{ name: 'analysis_review', data: { message: payload['message'] ?? '' } }]
+    // hitl_step_review — payload has {step_number, signal, proposed_action, message}
+    if (next.includes('hitl_step_review')) {
+      return [{
+        name: 'step_review',
+        data: {
+          step_number:    payload['step_number'] ?? 1,
+          signal:         payload['signal'] ?? null,
+          proposed_action: payload['proposed_action'] ?? null,
+          message:        payload['message'] ?? '',
+        },
+      }]
     }
 
-    // hitl_review interrupt (HITL gate #3 — plan approval)
-    // plan_ready is already emitted from the plan node's on_chain_end — ignore here.
+    // analysis_summary — payload has {summary, findings, message}
+    if (next.includes('analysis_summary')) {
+      return [{
+        name: 'analysis_summary',
+        data: {
+          summary:  payload['summary'] ?? '',
+          findings: payload['findings'] ?? [],
+          message:  payload['message'] ?? '',
+        },
+      }]
+    }
+
+    // propose_fix — payload has {fix_proposal, based_on_findings, message}
+    if (next.includes('propose_fix')) {
+      return [{
+        name: 'propose_fix',
+        data: {
+          fix_proposal:     payload['fix_proposal'] ?? '',
+          based_on_findings: payload['based_on_findings'] ?? [],
+          message:          payload['message'] ?? '',
+        },
+      }]
+    }
+
     return []
   }
 
@@ -62,51 +89,29 @@ export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
   const rawData = ev.data as Record<string, unknown> | undefined
   const output = rawData?.['output'] as Record<string, unknown> | undefined
 
-  if (ev.event === 'on_chain_start') {
-    return [{ name: 'node_start', data: { node } }]
+  // act on_chain_start — extract tool name from state to show running indicator
+  if (ev.event === 'on_chain_start' && node === 'act') {
+    const input = rawData?.['input'] as Record<string, unknown> | undefined
+    const thought = input?.['current_thought'] as Record<string, unknown> | undefined
+    const toolName = thought?.['tool_name'] as string | undefined
+    if (toolName) return [{ name: 'step_start', data: { tool: toolName } }]
+    return []
   }
+
   if (ev.event !== 'on_chain_end') return []
 
   const out: MappedEvent[] = [{ name: 'node_done', data: { node } }]
   if (!output) return out
 
-  // extract_entities on_chain_end is skipped — entity_confirm interrupt is the HITL gate
-  // that shows the entity table. Emitting both caused a duplicate message.
-
-  // plan_ready — from plan node output; triggers awaitingReply for plan approval
-  if (node === 'plan' && output['plan']) {
-    const plan = output['plan'] as Record<string, unknown>
-    const rawSteps = plan['steps'] as Record<string, unknown>[] | undefined
-    if (rawSteps && rawSteps.length > 0) {
-      const steps = rawSteps.map(s => ({
-        ...s,
-        tool: s['tool'] ?? s['tool_name'],
-        parameters: s['parameters'] ?? s['inputs'] ?? {},
-        phase: s['phase'] ?? 'analysis',
-      }))
-      out.push({ name: 'plan_ready', data: { steps } })
+  // observe on_chain_end — new TAO entry in step_history
+  if (node === 'observe' && Array.isArray(output['step_history'])) {
+    const taos = output['step_history'] as Record<string, unknown>[]
+    for (const tao of taos) {
+      out.push({ name: 'step_observed', data: { tao } })
     }
   }
 
-  // step_result — execute_step node
-  if (node === 'execute_step' && output['step_results']) {
-    const results = output['step_results'] as Record<string, Record<string, unknown>>
-    for (const [step_id, result] of Object.entries(results)) {
-      out.push({
-        name: 'step_result',
-        data: {
-          step_id,
-          tool:    result['tool'] ?? '',
-          status:  result['status'] ?? 'done',
-          output:  result['output'] ?? result,
-          input:   result['inputs'] ?? result['input'] ?? {},
-          api_url: result['api_url'] ?? null,
-        },
-      })
-    }
-  }
-
-  // report — report node
+  // report — unchanged
   if (node === 'report' && output['report']) {
     out.push({
       name: 'report',

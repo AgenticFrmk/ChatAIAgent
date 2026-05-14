@@ -1,6 +1,6 @@
 // Converts raw agent event payloads into markdown text for chat bubbles.
 
-import type { EntityMap, PlanStep, ReportData, StepResult } from './types'
+import type { EntityMap, ReportData, Tao } from './types'
 
 export function formatEntities(entities: EntityMap): string {
   const rows: string[] = []
@@ -13,7 +13,9 @@ export function formatEntities(entities: EntityMap): string {
     }
   }
 
-  if (rows.length === 0) return 'No entities extracted.'
+  if (rows.length === 0) {
+    return "I didn't need any specific details for this request. Reply 'yes' to proceed or describe any additional context."
+  }
 
   return [
     'I extracted these from your incident:\n',
@@ -24,29 +26,72 @@ export function formatEntities(entities: EntityMap): string {
   ].join('\n')
 }
 
-export function formatPlan(steps: PlanStep[]): string {
-  // Group steps by wave (steps with no dependencies = wave 1, etc.)
-  const waves = groupIntoWaves(steps)
+export function formatStepReview(
+  stepNumber: number,
+  signal: string | null,
+  proposedAction: { tool: string; inputs: Record<string, unknown> } | null,
+): string {
+  if (signal === 'ANALYSIS_DONE') {
+    return [
+      `**Analysis phase complete** (${stepNumber} step${stepNumber !== 1 ? 's' : ''} run)`,
+      '',
+      'Approve to review the findings summary, or Reject to stop.',
+    ].join('\n')
+  }
+  if (signal === 'REMEDIATION_DONE') {
+    return [
+      `**Remediation phase complete** (${stepNumber} step${stepNumber !== 1 ? 's' : ''} run)`,
+      '',
+      'Approve to generate the final report, or Reject to stop.',
+    ].join('\n')
+  }
 
-  const lines: string[] = ['Here\'s my plan — analysis first, then remediation:\n']
+  const tool = proposedAction?.tool ?? '(unknown)'
+  const inputs = proposedAction?.inputs ?? {}
+  const inputStr = Object.keys(inputs).length > 0
+    ? JSON.stringify(inputs)
+    : '{}'
 
-  waves.forEach((wave, i) => {
-    lines.push(`**Wave ${i + 1}${wave.length > 1 ? ' (parallel)' : ''}**`)
-    for (const s of wave) {
-      const phaseTag = s.phase === 'remediation' ? ' *(fix)*' : ' *(diagnose)*'
-      lines.push(`- **${s.tool}**${phaseTag} — ${s.description}`)
-    }
-    lines.push('')
-  })
-
-  lines.push("Ready to execute? Reply 'yes' to proceed, or describe any changes.")
-  return lines.join('\n')
+  return [
+    `**Step ${stepNumber}** — \`${tool}(${inputStr})\``,
+    '',
+    'Approve · Modify `<feedback>` · Reject',
+  ].join('\n')
 }
 
-export function stepLine(result: StepResult): string {
-  const icon = result.status === 'success' ? '✓' : result.status === 'error' ? '✗' : '⏳'
-  const detail = summariseOutput(result.output)
-  return `${icon} **${result.tool}**${detail ? ` — ${detail}` : ''}`
+export function formatAnalysisSummary(
+  summary: string,
+  findings: string[],
+): string {
+  const findingLines = findings.length > 0
+    ? findings.map((f, i) => `${i + 1}. ${f}`).join('\n')
+    : '(no findings recorded)'
+
+  return [
+    '**Root cause analysis**',
+    '',
+    summary,
+    '',
+    '**Findings:**',
+    findingLines,
+    '',
+    "Do you want me to propose a fix? Reply 'yes' to proceed or 'no' to stop.",
+  ].join('\n')
+}
+
+export function formatProposeFix(fixProposal: string): string {
+  return [
+    '**Proposed remediation plan**',
+    '',
+    fixProposal,
+    '',
+    'Approve · Modify `<feedback>` · Reject',
+  ].join('\n')
+}
+
+export function formatObservation(tao: Tao): string {
+  const icon = '✓'
+  return `${icon} **${tao.tool_name}** — ${tao.finding}`
 }
 
 export function formatReport(report: ReportData): string {
@@ -61,38 +106,4 @@ export function formatReport(report: ReportData): string {
   }
 
   return lines.join('\n')
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────
-
-function groupIntoWaves(steps: PlanStep[]): PlanStep[][] {
-  const waves: PlanStep[][] = []
-  const placed = new Set<string>()
-
-  let remaining = [...steps]
-  while (remaining.length > 0) {
-    const wave = remaining.filter(s =>
-      s.dependencies.every(d => placed.has(d)),
-    )
-    if (wave.length === 0) {
-      // Circular or unresolvable — dump the rest in one wave
-      waves.push(remaining)
-      break
-    }
-    waves.push(wave)
-    wave.forEach(s => placed.add(s.id))
-    remaining = remaining.filter(s => !placed.has(s.id))
-  }
-
-  return waves
-}
-
-function summariseOutput(output: unknown): string {
-  if (!output || typeof output !== 'object') return ''
-  const o = output as Record<string, unknown>
-  // Surface the most useful single field
-  for (const key of ['message', 'status', 'id', 'result']) {
-    if (typeof o[key] === 'string') return o[key] as string
-  }
-  return ''
 }

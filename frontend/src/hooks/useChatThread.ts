@@ -1,18 +1,27 @@
 import { useCallback, useRef, useState } from 'react'
 import { invokeStream, resumeStream, getEvents } from '../lib/gateway'
 import { mapGatewayEvent } from '../lib/eventMapper'
-import { formatEntities, formatPlan, formatReport, stepLine } from '../lib/formatter'
-import type { ChatMessage, EntityMap, PlanStep, ReportData, StepResult } from '../lib/types'
-
-type HitlKind = 'entity' | 'clarification' | 'plan' | 'analysis' | null
+import {
+  formatEntities,
+  formatStepReview,
+  formatAnalysisSummary,
+  formatProposeFix,
+  formatObservation,
+  formatReport,
+} from '../lib/formatter'
+import type { BudgetState, ChatMessage, EntityMap, HitlKind, ReportData, Tao } from '../lib/types'
 
 export interface UseChatThreadReturn {
   messages:      ChatMessage[]
   awaitingReply: boolean
   placeholder:   string
   isRunning:     boolean
+  budget:        BudgetState | null
+  budgetHistory: { tokens: number; ts: number }[]
   send:          (text: string) => Promise<void>
   reset:         () => void
+  autoApprove:   boolean
+  setAutoApprove: (v: boolean) => void
 }
 
 function uid() {
@@ -28,17 +37,22 @@ function make(
 }
 
 export function useChatThread(token: string | null): UseChatThreadReturn {
-  const [messages, setMessages]   = useState<ChatMessage[]>([])
-  const [isRunning, setIsRunning] = useState(false)
-  const [hitlKind, setHitlKind]   = useState<HitlKind>(null)
+  const [messages, setMessages]         = useState<ChatMessage[]>([])
+  const [isRunning, setIsRunning]       = useState(false)
+  const [hitlKind, setHitlKind]         = useState<HitlKind>(null)
+  const [budget, setBudget]             = useState<BudgetState | null>(null)
+  const [budgetHistory, setBudgetHistory] = useState<{ tokens: number; ts: number }[]>([])
+  const [autoApprove, setAutoApprove]   = useState(false)
 
-  const threadIdRef     = useRef<string | null>(null)
-  const lastSeenRef     = useRef(0)
-  const abortRef        = useRef<AbortController | null>(null)
-  const tokenRef        = useRef(token)
-  const thinkingIdRef   = useRef<string | null>(null)
-  const executingIdRef  = useRef<string | null>(null)
-  tokenRef.current = token
+  const threadIdRef      = useRef<string | null>(null)
+  const lastSeenRef      = useRef(0)
+  const abortRef         = useRef<AbortController | null>(null)
+  const tokenRef         = useRef(token)
+  const autoApproveRef   = useRef(autoApprove)
+  const thinkingIdRef    = useRef<string | null>(null)
+  const executingIdRef   = useRef<string | null>(null)
+  tokenRef.current       = token
+  autoApproveRef.current = autoApprove
 
   // ── replaceThinking ────────────────────────────────────────────────────
   // Swaps the current thinking bubble with a real message.
@@ -71,9 +85,35 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     setMessages(prev => thId ? prev.map(x => x.id === thId ? m : x) : [...prev, m])
   }, [])
 
+  // ── replaceOrAppendStepLine ────────────────────────────────────────────
+  // For step results: finds and replaces the running ⏳ line for the same tool,
+  // or appends if no running line exists yet.
+  const replaceOrAppendStepLine = useCallback((tool: string, resultLine: string) => {
+    const execId = executingIdRef.current
+    const runningPrefix = `⏳ **${tool}**`
+    if (execId) {
+      setMessages(prev => prev.map(m => {
+        if (m.id !== execId) return m
+        const lines = (m.text ?? '').split('\n')
+        const idx = lines.findIndex(l => l.startsWith(runningPrefix))
+        if (idx >= 0) {
+          lines[idx] = resultLine
+          return { ...m, text: lines.join('\n') }
+        }
+        return { ...m, text: (m.text ?? '') + '\n' + resultLine }
+      }))
+      return
+    }
+    appendStepLine(resultLine)
+  }, [appendStepLine])
+
   // ── handle ─────────────────────────────────────────────────────────────
   const handle = useCallback((type: string, data: Record<string, unknown>) => {
     switch (type) {
+      case 'step_start':
+        appendStepLine(`⏳ **${data.tool as string}** — running…`)
+        break
+
       case 'entity_confirm':
         replaceThinking(formatEntities(data.entities as EntityMap))
         setHitlKind('entity')
@@ -84,20 +124,36 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
         setHitlKind('clarification')
         break
 
-      case 'plan_ready':
-        replaceThinking(formatPlan(data.steps as PlanStep[]))
-        setHitlKind('plan')
-        break
-
-      case 'analysis_review':
+      case 'step_review': {
         executingIdRef.current = null
-        setMessages(prev => [...prev, make('agent', 'text', data.message as string)])
-        setHitlKind('analysis')
+        const text = formatStepReview(
+          data.step_number as number,
+          data.signal as string | null,
+          data.proposed_action as { tool: string; inputs: Record<string, unknown> } | null,
+        )
+        setMessages(prev => [...prev, make('agent', 'text', text)])
+        setHitlKind('step_review')
+        break
+      }
+
+      case 'analysis_summary':
+        executingIdRef.current = null
+        setMessages(prev => [...prev, make('agent', 'text',
+          formatAnalysisSummary(data.summary as string, data.findings as string[]))])
+        setHitlKind('analysis_summary')
         break
 
-      case 'step_result':
-        appendStepLine(stepLine(data as unknown as StepResult))
+      case 'propose_fix':
+        setMessages(prev => [...prev, make('agent', 'text',
+          formatProposeFix(data.fix_proposal as string))])
+        setHitlKind('propose_fix')
         break
+
+      case 'step_observed': {
+        const tao = data.tao as Tao
+        replaceOrAppendStepLine(tao.tool_name, formatObservation(tao))
+        break
+      }
 
       case 'report':
         executingIdRef.current = null
@@ -112,11 +168,18 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
         setHitlKind(null)
         break
 
+      case 'budget': {
+        const b = data as unknown as BudgetState
+        setBudget(b)
+        setBudgetHistory(prev => [...prev, { tokens: b.estimated_tokens, ts: Date.now() }])
+        break
+      }
+
       case 'done':
         setIsRunning(false)
         break
     }
-  }, [replaceThinking, appendStepLine])
+  }, [replaceThinking, appendStepLine, replaceOrAppendStepLine])
 
   // ── startPolling ────────────────────────────────────────────────────────
   const startPolling = useCallback((threadId: string) => {
@@ -165,21 +228,20 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
       lastSeenRef.current = 0
     }
 
-    // Build the user + thinking pair
-    const userMsg  = make('user', 'text', text)
-    const thinkMsg = make('agent', 'thinking')
-    thinkingIdRef.current = thinkMsg.id
+    const userMsg = make('user', 'text', text)
+    thinkingIdRef.current = null
     executingIdRef.current = null
 
     setHitlKind(null)
     setIsRunning(true)
-    // Resume: append to thread. New session: start fresh.
-    setMessages(isResuming ? prev => [...prev, userMsg, thinkMsg] : [userMsg, thinkMsg])
+    // Resume: append user message. New session: start fresh with just the user message.
+    // ThinkingBubble is rendered by ChatThread while isRunning && !awaitingReply.
+    setMessages(isResuming ? prev => [...prev, userMsg] : [userMsg])
 
     if (isResuming) {
-      await resumeStream(threadIdRef.current!, text, tokenRef.current)
+      await resumeStream(threadIdRef.current!, text, tokenRef.current, autoApproveRef.current)
     } else {
-      const threadId = await invokeStream(text, tokenRef.current)
+      const threadId = await invokeStream(text, tokenRef.current, autoApproveRef.current)
       threadIdRef.current = threadId
       startPolling(threadId)
     }
@@ -196,6 +258,8 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     setMessages([])
     setIsRunning(false)
     setHitlKind(null)
+    setBudget(null)
+    setBudgetHistory([])
   }, [])
 
   // ── derived state ────────────────────────────────────────────────────────
@@ -203,11 +267,12 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
 
   const placeholder = (isRunning && !awaitingReply)
     ? ''
-    : hitlKind === 'entity'        ? 'Confirm or correct the extracted details…'
-    : hitlKind === 'clarification' ? 'Type your answer…'
-    : hitlKind === 'plan'          ? "Reply 'yes' to execute, or describe changes…"
-    : hitlKind === 'analysis'      ? "Reply 'yes' to apply fixes, or 'no' to stop…"
+    : hitlKind === 'entity'           ? 'Confirm or correct the extracted details…'
+    : hitlKind === 'clarification'    ? 'Type your answer…'
+    : hitlKind === 'step_review'      ? "Approve · Modify <feedback> · Reject"
+    : hitlKind === 'analysis_summary' ? "Reply 'yes' to propose a fix, or 'no' to stop…"
+    : hitlKind === 'propose_fix'      ? "Approve · Modify <feedback> · Reject"
     : 'Describe the incident…'
 
-  return { messages, awaitingReply, placeholder, isRunning, send, reset }
+  return { messages, awaitingReply, placeholder, isRunning, budget, budgetHistory, send, reset, autoApprove, setAutoApprove }
 }

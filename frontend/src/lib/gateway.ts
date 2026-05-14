@@ -61,19 +61,19 @@ export async function login(username: string, password: string): Promise<string>
   return json.access_token
 }
 
-export async function invokeStream(message: string, token: string): Promise<string> {
+export async function invokeStream(message: string, token: string, autoApprove = false): Promise<string> {
   const data = await _request<{ thread_id: string }>(
     '/invoke/stream',
-    { method: 'POST', body: JSON.stringify({ message }) },
+    { method: 'POST', body: JSON.stringify({ message, auto_approve: autoApprove }) },
     token,
   )
   return data.thread_id
 }
 
-export async function resumeStream(threadId: string, response: string, token: string): Promise<void> {
+export async function resumeStream(threadId: string, response: string, token: string, autoApprove = false): Promise<void> {
   await _request(
     '/resume/stream',
-    { method: 'POST', body: JSON.stringify({ thread_id: threadId, response }) },
+    { method: 'POST', body: JSON.stringify({ thread_id: threadId, response, auto_approve: autoApprove }) },
     token,
   )
 }
@@ -85,6 +85,14 @@ export async function getEvents(
 ): Promise<EventsResponse> {
   return _request<EventsResponse>(
     `/events/${encodeURIComponent(threadId)}?from=${fromIndex}`,
+    { method: 'GET' },
+    token,
+  )
+}
+
+export async function getHistory(token: string, limit = 100): Promise<Record<string, unknown>[]> {
+  return _request<Record<string, unknown>[]>(
+    `/history?limit=${limit}`,
     { method: 'GET' },
     token,
   )

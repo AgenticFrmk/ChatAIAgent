@@ -18,6 +18,15 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # ── AuthService — token endpoint bypasses AgentGateway entirely ─────────
+    location = /gateway/auth/token {
+        set $auth "${AUTH_SERVICE_URL}";
+        rewrite ^/gateway/auth/token$ /auth/token break;
+        proxy_pass $auth;
+        proxy_buffering off;
+        proxy_read_timeout 10s;
+    }
+
     # ── AgentGateway — all agent API calls ───────────────────────────────────
     # /gateway/* → agent-gateway:8000/*
     location /gateway/ {

@@ -22,7 +22,7 @@ EXPOSE 80
 
 # Substitute service URLs; nginx's own $host/$uri/etc. are left alone
 CMD ["/bin/sh", "-c", \
-  "envsubst '${AGENT_GATEWAY_URL} ${SLM_PLATFORM_URL} ${REGISTRY_SERVICE_URL}' \
+  "envsubst '${AGENT_GATEWAY_URL} ${AUTH_SERVICE_URL} ${SLM_PLATFORM_URL} ${REGISTRY_SERVICE_URL}' \
     < /etc/nginx/nginx.conf.template \
     > /etc/nginx/conf.d/default.conf \
   && nginx -g 'daemon off;'"]

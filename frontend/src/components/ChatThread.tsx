@@ -1,17 +1,22 @@
 import { useEffect, useRef } from 'react'
 import type { ChatMessage as ChatMessageType } from '../lib/types'
 import ChatMessage from './ChatMessage'
+import ThinkingBubble from './ThinkingBubble'
 
 interface Props {
   messages: ChatMessageType[]
+  isRunning: boolean
+  awaitingReply: boolean
 }
 
-export default function ChatThread({ messages }: Props) {
+export default function ChatThread({ messages, isRunning, awaitingReply }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, isRunning])
+
+  const showThinking = isRunning && !awaitingReply
 
   return (
     <div className="flex-1 overflow-y-auto px-4 py-6">
@@ -29,6 +34,7 @@ export default function ChatThread({ messages }: Props) {
         {messages.map(msg => (
           <ChatMessage key={msg.id} msg={msg} />
         ))}
+        {showThinking && <ThinkingBubble />}
         <div ref={bottomRef} />
       </div>
     </div>

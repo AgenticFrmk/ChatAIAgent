@@ -43,6 +43,8 @@ services:
       POSTGRES_PASSWORD: ${REGISTRY_DB_PASSWORD:-postgres}
     volumes:
       - postgres_registry_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d registry_service"]
       interval: 5s
@@ -66,6 +68,7 @@ services:
       AUTH_SERVICE_TOKEN_URL: http://auth-service:9000/auth/token
       REGISTRY_SERVICE_URL: http://registry-service:8001
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DEFAULT_TENANT: ${DEFAULT_TENANT:-demo}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8001/health || exit 1"]
       interval: 10s
@@ -213,7 +216,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:${GATEWAY_DB_PASSWORD:-postgres}@postgres-gateway:5432/agent_gateway
       JWKS_URL: http://auth-service:9000/.well-known/jwks.json
-      AUTH_SERVICE_TOKEN_URL: http://auth-service:9000/auth/token
       AGENT_BE_URL: http://agentbe:8001
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: http://localhost,http://localhost:3001,${EXTRA_CORS_ORIGINS:-}
@@ -268,6 +270,7 @@ services:
       - slm-platform
     environment:
       AGENT_GATEWAY_URL: http://agent-gateway:8000
+      AUTH_SERVICE_URL: http://auth-service:9000
       SLM_PLATFORM_URL: http://slm-platform:8080
       REGISTRY_SERVICE_URL: http://registry-service:8001
     ports:

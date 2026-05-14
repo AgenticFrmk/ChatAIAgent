@@ -1,15 +1,21 @@
-import { Terminal, LogOut, RotateCcw, BarChart2, BookOpen, Info } from 'lucide-react'
+import { Terminal, LogOut, RotateCcw, BarChart2, BookOpen, Info, DollarSign, Zap } from 'lucide-react'
+import BudgetGauge from './BudgetGauge'
+import type { BudgetState } from '../lib/types'
 
 interface Props {
   username: string
   isRunning: boolean
   awaitingReply: boolean
   hasMessages: boolean
+  budget: BudgetState | null
+  budgetHistory: { tokens: number; ts: number }[]
+  autoApprove: boolean
+  onAutoApproveToggle: (v: boolean) => void
   onReset: () => void
   onLogout: () => void
 }
 
-export default function ChatHeader({ username, isRunning, awaitingReply, hasMessages, onReset, onLogout }: Props) {
+export default function ChatHeader({ username, isRunning, awaitingReply, hasMessages, budget, budgetHistory, autoApprove, onAutoApproveToggle, onReset, onLogout }: Props) {
   const statusLabel = awaitingReply
     ? 'Awaiting reply'
     : isRunning
@@ -42,10 +48,26 @@ export default function ChatHeader({ username, isRunning, awaitingReply, hasMess
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {/* Auto-approve toggle */}
+        <button
+          onClick={() => onAutoApproveToggle(!autoApprove)}
+          title={autoApprove ? 'Auto-approve ON — takes effect on next session' : 'Auto-approve OFF — takes effect on next session'}
+          className={`flex items-center gap-1.5 text-[10px] uppercase tracking-widest rounded-full px-3 py-1 border font-medium transition-colors ${
+            autoApprove
+              ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/20'
+              : 'text-[#484f58] bg-[#161b22] border-[#1c2333] hover:text-[#8b949e]'
+          }`}
+        >
+          <Zap className="w-3 h-3" />
+          Auto
+        </button>
+
         {/* Status pill */}
         <span className={`text-[10px] uppercase tracking-widest rounded-full px-3 py-1 border font-medium ${statusColor}`}>
           {statusLabel}
         </span>
+
+        <BudgetGauge budget={budget} history={budgetHistory} />
 
         {/* New chat — only when idle and has history */}
         {!isRunning && hasMessages && (
@@ -64,6 +86,14 @@ export default function ChatHeader({ username, isRunning, awaitingReply, hasMess
           className="p-2 rounded-lg text-[#8b949e] hover:text-purple-400 hover:bg-[#161b22] transition-colors"
         >
           <BarChart2 className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={() => window.open('/billing', '_blank')}
+          title="Billing"
+          className="p-2 rounded-lg text-[#8b949e] hover:text-emerald-400 hover:bg-[#161b22] transition-colors"
+        >
+          <DollarSign className="w-4 h-4" />
         </button>
 
         <a
