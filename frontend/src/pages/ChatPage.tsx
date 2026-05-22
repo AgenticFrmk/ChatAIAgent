@@ -46,7 +46,7 @@ export default function ChatPage() {
   if (!session) return null
 
   return (
-    <div className="h-screen flex flex-col bg-[#080b10]">
+    <div className="h-screen flex flex-col bg-gray-50">
       <ChatHeader
         username={session.username}
         isRunning={isRunning}

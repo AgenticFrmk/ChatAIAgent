@@ -13,19 +13,19 @@ export default function AgentBubble({ text, timestamp }: Props) {
   return (
     <div className="flex gap-3 items-start">
       {/* Avatar */}
-      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-700 to-amber-600 flex items-center justify-center flex-shrink-0 mt-0.5">
         <Terminal className="w-3.5 h-3.5 text-white" />
       </div>
 
       <div className="flex-1 min-w-0">
-        <div className="bg-[#0d1117] border border-[#1c2333] rounded-2xl rounded-tl-sm px-4 py-3">
-          <div className="prose text-sm text-[#e6edf3] leading-relaxed">
+        <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+          <div className="prose prose-sm text-gray-900 leading-relaxed max-w-none">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {text}
             </ReactMarkdown>
           </div>
         </div>
-        <p className="text-[10px] text-[#484f58] mt-1 ml-1">{time}</p>
+        <p className="text-[10px] text-gray-600 mt-1 ml-1">{time}</p>
       </div>
     </div>
   )

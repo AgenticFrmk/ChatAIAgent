@@ -72,7 +72,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       DEFAULT_TENANT: ${DEFAULT_TENANT:-demo}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8001/health || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -142,8 +142,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:${SLM_DB_PASSWORD:-postgres}@postgres-slm:5432/slm_platform
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       SLMPLATFORM_API_TOKEN: ${SLMPLATFORM_API_TOKEN:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')\" || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -237,13 +238,14 @@ services:
       CORS_ORIGINS: http://localhost,http://localhost:3001,${EXTRA_CORS_ORIGINS:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       REGISTRY_URL: http://registry-service:8001
+      AUTH_SERVICE_TOKEN_URL: http://auth-service:9000/auth/token
     networks:
       - agentic
 
   # ── Mock API — simulates tool endpoints (VPN, Datadog, PagerDuty) ────────────
   mock-api:
     build:
-      context: ../SREDemo/mock_api
+      context: ./mock_api
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/health || exit 1"]
       interval: 10s
@@ -275,6 +277,27 @@ services:
     networks:
       - agentic
 
+  # ── KB seeder — loads Cradlepoint KB articles into migration_chunks for RAG ──
+  kb-seeder:
+    build:
+      context: ../RegistryService
+    entrypoint: ["python"]
+    command: ["scripts/seed_kb.py"]
+    depends_on:
+      connectivity-seeder:
+        condition: service_completed_successfully
+    environment:
+      REGISTRY_SERVICE_URL: http://registry-service:8001
+      AUTH_SERVICE_URL: http://auth-service:9000
+      SEED_USERNAME: ${SEED_USERNAME:-sre-seed@example.com}
+      SEED_PASSWORD: ${SEED_PASSWORD:-changeme}
+      KB_DIR: /kb
+    volumes:
+      - ../Simulation/cradlepoint/kb:/kb:ro
+    restart: "no"
+    networks:
+      - agentic
+
   # ── ChatAIAgent Web UI — nginx (static files + /gateway proxy) ───────────────
   chat-ai-agent:
     build:
@@ -282,7 +305,7 @@ services:
       dockerfile: ChatAIAgent/Dockerfile
     depends_on:
       - agent-gateway
-      - connectivity-seeder
+      - kb-seeder
       - slm-platform
     environment:
       AGENT_GATEWAY_URL: http://agent-gateway:8000

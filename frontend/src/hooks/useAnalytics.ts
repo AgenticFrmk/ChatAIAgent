@@ -36,6 +36,23 @@ export interface RunPage {
   size: number
 }
 
+export interface RAGASScores {
+  faithfulness: number
+  context_precision: number
+  answer_relevancy: number
+  evaluated_at: string
+}
+
+export interface RunDetail extends RunRecord {
+  agent_id: string
+  domain: string
+  started_at: string
+  finished_at: string
+  step_count: number
+  alert_state_final: string
+  ragas_scores: RAGASScores | null
+}
+
 export interface TimeRange {
   from: Date
   to: Date
@@ -62,6 +79,63 @@ async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json() as Promise<T>
+}
+
+const RAGAS_POLL_INTERVAL_MS = 5_000
+const RAGAS_POLL_MAX_MS = 3 * 60 * 1_000  // stop polling after 3 minutes
+
+function isRecentRun(finishedAt: string): boolean {
+  return Date.now() - new Date(finishedAt).getTime() < RAGAS_POLL_MAX_MS
+}
+
+export function useRunDetail(
+  agentId: string,
+  runId: string | null,
+  token: string | null,
+) {
+  const [detail, setDetail] = useState<RunDetail | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!runId || !token) { setDetail(null); return }
+    const resolvedRunId = runId
+    let cancelled = false
+    let pollTimer: ReturnType<typeof setTimeout> | null = null
+
+    async function fetch() {
+      if (cancelled) return
+      try {
+        const data = await fetchJson<RunDetail>(
+          `${SLM_BASE}/agent-perf/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(resolvedRunId)}`
+        )
+        if (!cancelled) {
+          setDetail(data)
+          setLoading(false)
+          // Keep polling while scores are absent and the run is recent enough
+          if (!data.ragas_scores && isRecentRun(data.finished_at)) {
+            pollTimer = setTimeout(fetch, RAGAS_POLL_INTERVAL_MS)
+          }
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setError(String(e))
+          setLoading(false)
+        }
+      }
+    }
+
+    setLoading(true)
+    setError(null)
+    fetch()
+
+    return () => {
+      cancelled = true
+      if (pollTimer) clearTimeout(pollTimer)
+    }
+  }, [agentId, runId, token])
+
+  return { detail, loading, error }
 }
 
 export function useAnalytics(agentId: string, range: TimeRange, token: string | null = null) {

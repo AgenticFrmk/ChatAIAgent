@@ -48,7 +48,7 @@ const STAGES: Stage[] = [
     id: 'build',
     label: 'Build',
     number: 1,
-    color: '#a855f7',
+    color: '#C2410C',
     tagline: 'Define schemas, tools & playbooks that give agents domain knowledge',
     components: [
       {
@@ -71,7 +71,7 @@ const STAGES: Stage[] = [
         title: 'AgentCore Framework',
         subtitle: 'Build production AI agents',
         icon: Brain,
-        accent: '#a855f7',
+        accent: '#C2410C',
         role: 'Orchestration Engine',
         bullets: [
           'LangGraph StateGraph — 12 graph nodes',
@@ -108,17 +108,18 @@ const STAGES: Stage[] = [
       {
         id: 'analytics',
         title: 'Analytics & Scoring',
-        subtitle: 'Agent performance metrics',
+        subtitle: 'Agent performance & RAG quality metrics',
         icon: BarChart3,
         accent: '#06b6d4',
         role: 'Observability',
         bullets: [
-          'MTTR · plan accuracy · step efficiency',
-          'False-action threshold tracking',
-          'Confidence calibration scores',
-          'ROI and resolution time trends',
+          'MTTR · plan accuracy · step efficiency · ROI trends',
+          'False-action threshold tracking · confidence calibration',
+          'RAG quality — Faithfulness · Context Precision · Answer Relevancy',
+          'RAGAS evaluated by SLMPlatform using BAAI/bge-small-en-v1.5 embeddings',
+          'Scores stored per-run; visible in run detail drill-down',
         ],
-        flow: 'Aggregates run metrics so eval results compare against baselines',
+        flow: 'Aggregates run metrics and RAG quality scores so eval results compare against eval contracts and RAGAS thresholds',
       },
     ],
   },
@@ -317,47 +318,47 @@ function ComponentCard({ component, stageColor }: { component: Component; stageC
       exit={{ opacity: 0, y: -8 }}
       transition={{ duration: 0.28, ease: 'easeOut' }}
       style={{
-        background: component.highlight ? '#1a1025' : '#0d1117',
-        border: `1.5px solid ${component.highlight ? component.accent : '#1c2333'}`,
+        background: component.highlight ? '#fff7ed' : '#ffffff',
+        border: `1.5px solid ${component.highlight ? component.accent : '#e5e7eb'}`,
         borderRadius: 14,
         padding: '20px 22px',
         flex: 1,
         minWidth: 240,
         maxWidth: 400,
         boxShadow: component.highlight
-          ? `0 0 32px ${component.accent}35, 0 4px 24px rgba(0,0,0,0.5)`
-          : '0 4px 20px rgba(0,0,0,0.4)',
+          ? `0 0 24px ${component.accent}25, 0 4px 16px rgba(0,0,0,0.08)`
+          : '0 2px 8px rgba(0,0,0,0.06)',
         position: 'relative',
         overflow: 'hidden',
       }}
     >
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, ${component.accent}80, transparent)`, borderRadius: '14px 14px 0 0' }} />
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: `${component.accent}18`, border: `1px solid ${component.accent}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: component.accent }}>
+        <div style={{ width: 40, height: 40, borderRadius: 10, background: `${component.accent}15`, border: `1px solid ${component.accent}30`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: component.accent }}>
           <Icon size={17} />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ color: '#e6edf3', fontSize: 13, fontWeight: 700, lineHeight: 1.3 }}>{component.title}</div>
-          <div style={{ color: component.accent, fontSize: 11, marginTop: 3, fontWeight: 500 }}>{component.subtitle}</div>
+          <div style={{ color: '#111827', fontSize: 15, fontWeight: 700, lineHeight: 1.3 }}>{component.title}</div>
+          <div style={{ color: component.accent, fontSize: 13, marginTop: 3, fontWeight: 500 }}>{component.subtitle}</div>
         </div>
-        <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: stageColor, background: `${stageColor}15`, border: `1px solid ${stageColor}30`, borderRadius: 20, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', color: stageColor, background: `${stageColor}15`, border: `1px solid ${stageColor}30`, borderRadius: 20, padding: '3px 8px', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {component.role}
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 14 }}>
         {component.bullets.map((b) => (
           <div key={b} style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
-            <span style={{ color: component.accent, fontSize: 8, marginTop: 3, flexShrink: 0 }}>▸</span>
-            <span style={{ color: '#8b949e', fontSize: 11, lineHeight: 1.5 }}>{b}</span>
+            <span style={{ color: component.accent, fontSize: 10, marginTop: 3, flexShrink: 0 }}>▸</span>
+            <span style={{ color: '#374151', fontSize: 13, lineHeight: 1.5 }}>{b}</span>
           </div>
         ))}
       </div>
-      <div style={{ borderTop: '1px solid #1c2333', paddingTop: 10, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-        <ChevronRight size={11} color={stageColor} style={{ flexShrink: 0, marginTop: 1 }} />
-        <span style={{ color: '#6e7681', fontSize: 10, lineHeight: 1.5, fontStyle: 'italic' }}>{component.flow}</span>
+      <div style={{ borderTop: '1px solid #e5e7eb', paddingTop: 10, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+        <ChevronRight size={13} color={stageColor} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span style={{ color: '#374151', fontSize: 12, lineHeight: 1.5, fontStyle: 'italic' }}>{component.flow}</span>
       </div>
       {component.badge && (
-        <div style={{ marginTop: 10, background: `${component.accent}18`, color: component.accent, fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', padding: '4px 0', borderRadius: 6 }}>
+        <div style={{ marginTop: 10, background: `${component.accent}15`, color: component.accent, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', textAlign: 'center', padding: '4px 0', borderRadius: 6 }}>
           {component.badge}
         </div>
       )}
@@ -370,20 +371,20 @@ function StagePill({ stage, active, onClick, isLast }: { stage: Stage; active: b
     <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
       <button
         onClick={onClick}
-        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', borderRadius: 10, border: `1.5px ${stage.future ? 'dashed' : 'solid'} ${active ? stage.color : stage.future ? '#30363d' : '#1c2333'}`, background: active ? `${stage.color}15` : 'transparent', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: active ? `0 0 18px ${stage.color}30` : 'none', position: 'relative', opacity: stage.future && !active ? 0.65 : 1 }}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 20px', borderRadius: 10, border: `1.5px ${stage.future ? 'dashed' : 'solid'} ${active ? stage.color : stage.future ? '#d1d5db' : '#e5e7eb'}`, background: active ? `${stage.color}12` : 'transparent', cursor: 'pointer', transition: 'all 0.2s ease', boxShadow: active ? `0 0 14px ${stage.color}25` : 'none', position: 'relative', opacity: stage.future && !active ? 0.65 : 1 }}
       >
-        <div style={{ width: 22, height: 22, borderRadius: '50%', background: active ? stage.color : '#1c2333', color: active ? '#fff' : '#484f58', fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease' }}>
+        <div style={{ width: 24, height: 24, borderRadius: '50%', background: active ? stage.color : '#e5e7eb', color: active ? '#fff' : '#374151', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s ease' }}>
           {stage.number}
         </div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: active ? stage.color : '#8b949e', letterSpacing: '0.02em', transition: 'color 0.2s ease' }}>{stage.label}</span>
-        <span style={{ fontSize: 9, fontWeight: 600, color: active ? stage.color : '#484f58', background: active ? `${stage.color}20` : '#161b22', border: `1px solid ${active ? stage.color + '40' : '#30363d'}`, borderRadius: 10, padding: '1px 6px', transition: 'all 0.2s ease' }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: active ? stage.color : '#374151', letterSpacing: '0.02em', transition: 'color 0.2s ease' }}>{stage.label}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: active ? stage.color : '#374151', background: active ? `${stage.color}15` : '#f3f4f6', border: `1px solid ${active ? stage.color + '40' : '#e5e7eb'}`, borderRadius: 10, padding: '1px 6px', transition: 'all 0.2s ease' }}>
           {stage.future ? 'roadmap' : `${stage.components.length} ${stage.components.length === 1 ? 'component' : 'components'}`}
         </span>
         {active && (
           <motion.div layoutId="stage-underline" style={{ position: 'absolute', bottom: -2, left: 12, right: 12, height: 2, borderRadius: 2, background: stage.color }} transition={{ type: 'spring', stiffness: 500, damping: 40 }} />
         )}
       </button>
-      {!isLast && <ArrowRight size={16} color="#30363d" style={{ margin: '0 4px', flexShrink: 0 }} />}
+      {!isLast && <ArrowRight size={16} color="#d1d5db" style={{ margin: '0 4px', flexShrink: 0 }} />}
     </div>
   )
 }
@@ -393,35 +394,35 @@ export default function AboutPage() {
   const activeStage = STAGES.find((s) => s.id === activeId) ?? STAGES[0]
 
   return (
-    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#080b10', color: '#e6edf3', overflow: 'hidden' }}>
+    <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f9fafb', color: '#111827', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ flexShrink: 0, borderBottom: '1px solid #1c2333', background: '#0d1117', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ flexShrink: 0, borderBottom: '1px solid #e5e7eb', background: '#ffffff', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #C2410C, #D97706)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Brain size={16} color="white" />
           </div>
           <div>
-            <div style={{ color: '#e6edf3', fontSize: 13, fontWeight: 700 }}>AgentCore Platform</div>
-            <div style={{ color: '#8b949e', fontSize: 11, marginTop: 1 }}>A complete stack for production AI agents</div>
+            <div style={{ color: '#111827', fontSize: 15, fontWeight: 700 }}>AgentCore Platform</div>
+            <div style={{ color: '#374151', fontSize: 13, marginTop: 1 }}>A complete stack for production AI agents</div>
           </div>
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#a855f7', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.2)', borderRadius: 20, padding: '4px 12px' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#C2410C', background: 'rgba(194,65,12,0.08)', border: '1px solid rgba(194,65,12,0.2)', borderRadius: 20, padding: '4px 12px' }}>
             Platform Architecture
           </span>
           <button
             onClick={() => setActiveId('evolve')}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 20, border: '1px dashed rgba(251,191,36,0.45)', background: activeId === 'evolve' ? 'rgba(251,191,36,0.12)' : 'rgba(251,191,36,0.06)', color: '#fbbf24', cursor: 'pointer', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.2s ease', boxShadow: activeId === 'evolve' ? '0 0 12px rgba(251,191,36,0.25)' : 'none' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 12px', borderRadius: 20, border: '1px dashed rgba(217,119,6,0.5)', background: activeId === 'evolve' ? 'rgba(217,119,6,0.1)' : 'rgba(217,119,6,0.04)', color: '#d97706', cursor: 'pointer', fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.2s ease', boxShadow: activeId === 'evolve' ? '0 0 10px rgba(217,119,6,0.2)' : 'none' }}
           >
-            <Sparkles size={11} />
+            <Sparkles size={13} />
             Evolve
           </button>
         </div>
       </div>
 
       {/* Pipeline strip */}
-      <div style={{ flexShrink: 0, borderBottom: '1px solid #1c2333', background: '#0d1117', padding: '16px 32px' }}>
-        <div style={{ fontSize: 10, color: '#484f58', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 12 }}>
+      <div style={{ flexShrink: 0, borderBottom: '1px solid #e5e7eb', background: '#ffffff', padding: '16px 32px' }}>
+        <div style={{ fontSize: 12, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 600, marginBottom: 12 }}>
           Click a stage to explore its components
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
@@ -430,7 +431,7 @@ export default function AboutPage() {
           ))}
         </div>
         <AnimatePresence mode="wait">
-          <motion.div key={activeStage.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} transition={{ duration: 0.2 }} style={{ marginTop: 12, fontSize: 12, color: activeStage.color, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <motion.div key={activeStage.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} transition={{ duration: 0.2 }} style={{ marginTop: 12, fontSize: 14, color: activeStage.color, display: 'flex', alignItems: 'center', gap: 6 }}>
             <div style={{ width: 6, height: 6, borderRadius: '50%', background: activeStage.color, flexShrink: 0 }} />
             {activeStage.tagline}
           </motion.div>
@@ -438,29 +439,29 @@ export default function AboutPage() {
       </div>
 
       {/* Stage detail */}
-      <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px' }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: '28px 32px', background: '#f9fafb' }}>
         <AnimatePresence mode="wait">
           <motion.div key={activeStage.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
-              <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${activeStage.color}20`, border: `2px solid ${activeStage.color}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: activeStage.color, fontSize: 15, fontWeight: 800 }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', background: `${activeStage.color}15`, border: `2px solid ${activeStage.color}50`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: activeStage.color, fontSize: 15, fontWeight: 800 }}>
                 {activeStage.number}
               </div>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 800, color: '#e6edf3', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#111827', letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: 10 }}>
                   {activeStage.label}
                   {activeStage.future && (
-                    <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#fbbf24', background: 'rgba(251,191,36,0.1)', border: '1px dashed rgba(251,191,36,0.4)', borderRadius: 20, padding: '3px 10px' }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#d97706', background: 'rgba(217,119,6,0.08)', border: '1px dashed rgba(217,119,6,0.4)', borderRadius: 20, padding: '3px 10px' }}>
                       Future State
                     </span>
                   )}
                 </div>
-                <div style={{ fontSize: 12, color: '#6e7681', marginTop: 2 }}>
+                <div style={{ fontSize: 14, color: '#374151', marginTop: 2 }}>
                   {activeStage.future ? 'Not yet built — PRD & solution design in progress' : `${activeStage.components.length} platform ${activeStage.components.length === 1 ? 'component' : 'components'}`}
                 </div>
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
                 {STAGES.map((s) => (
-                  <div key={s.id} onClick={() => setActiveId(s.id)} style={{ width: s.id === activeId ? 28 : 8, height: 8, borderRadius: 4, background: s.id === activeId ? s.color : '#1c2333', transition: 'all 0.3s ease', cursor: 'pointer' }} />
+                  <div key={s.id} onClick={() => setActiveId(s.id)} style={{ width: s.id === activeId ? 28 : 8, height: 8, borderRadius: 4, background: s.id === activeId ? s.color : '#e5e7eb', transition: 'all 0.3s ease', cursor: 'pointer' }} />
                 ))}
               </div>
             </div>
@@ -476,20 +477,20 @@ export default function AboutPage() {
       </div>
 
       {/* Stats bar */}
-      <div style={{ flexShrink: 0, borderTop: '1px solid #1c2333', background: '#0d1117', padding: '10px 24px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 24px' }}>
+      <div style={{ flexShrink: 0, borderTop: '1px solid #e5e7eb', background: '#ffffff', padding: '10px 24px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 24px' }}>
         {STATS.map(({ label, value }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span style={{ color: '#e6edf3', fontSize: 15, fontWeight: 700 }}>{value}</span>
-            <span style={{ color: '#484f58', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+            <span style={{ color: '#111827', fontSize: 18, fontWeight: 700 }}>{value}</span>
+            <span style={{ color: '#374151', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
           </div>
         ))}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#484f58' }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#374151' }}>
           <span>Built on</span>
-          <span style={{ color: '#a855f7', fontWeight: 600 }}>LangGraph</span>
+          <span style={{ color: '#C2410C', fontWeight: 600 }}>LangGraph</span>
           <span>·</span>
           <span style={{ color: '#3b82f6', fontWeight: 600 }}>FastAPI</span>
           <span>·</span>
-          <span style={{ color: '#f97316', fontWeight: 600 }}>Claude Sonnet 4.6</span>
+          <span style={{ color: '#ea580c', fontWeight: 600 }}>Claude Sonnet 4.6</span>
         </div>
       </div>
     </div>

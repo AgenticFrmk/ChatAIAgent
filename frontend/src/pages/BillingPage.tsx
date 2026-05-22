@@ -2,9 +2,9 @@ import { DollarSign, Cpu, Database, Zap, Cloud, TrendingUp } from 'lucide-react'
 import { useBilling, type BillingCurrent, type BillingPeriod } from '../hooks/useBilling'
 
 const PLAN_STYLES: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  starter:      { label: 'Starter',      color: 'text-amber-400',   bg: 'bg-amber-500/10',   border: 'border-amber-500/30' },
-  professional: { label: 'Professional', color: 'text-blue-400',    bg: 'bg-blue-500/10',    border: 'border-blue-500/30' },
-  enterprise:   { label: 'Enterprise',   color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30' },
+  starter:      { label: 'Starter',      color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200' },
+  professional: { label: 'Professional', color: 'text-blue-700',    bg: 'bg-blue-50',    border: 'border-blue-200' },
+  enterprise:   { label: 'Enterprise',   color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
 }
 
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
@@ -18,16 +18,16 @@ function usd(n: number) {
 }
 
 function UsageBar({ value, limit, unit }: { value: number; limit: number | null; unit: string }) {
-  if (!limit) return <span className="text-xs text-[#484f58]">PAYG — no limit</span>
+  if (!limit) return <span className="text-xs text-gray-600">PAYG — no limit</span>
   const pct = Math.min(100, (value / limit) * 100)
   const color = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-500'
   return (
     <div className="space-y-1">
-      <div className="flex justify-between text-xs text-[#8b949e]">
+      <div className="flex justify-between text-xs text-gray-600">
         <span>{value.toLocaleString()} {unit}</span>
         <span>{Math.round(pct)}% of {limit.toLocaleString()}</span>
       </div>
-      <div className="h-1.5 bg-[#1c2333] rounded-full overflow-hidden">
+      <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
         <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
       </div>
     </div>
@@ -43,13 +43,13 @@ function CostTile({
   cost: string
 }) {
   return (
-    <div className="bg-[#0d1117] border border-[#1c2333] rounded-xl p-4 flex flex-col gap-2">
-      <div className="flex items-center gap-2 text-[#8b949e]">
+    <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-2">
+      <div className="flex items-center gap-2 text-gray-600">
         {icon}
         <span className="text-xs font-medium uppercase tracking-wider">{label}</span>
       </div>
-      <p className="text-lg font-mono font-semibold text-[#e6edf3]">{metric}</p>
-      <p className="text-sm font-mono text-purple-400">{cost}</p>
+      <p className="text-lg font-mono font-semibold text-gray-900">{metric}</p>
+      <p className="text-sm font-mono text-orange-700">{cost}</p>
     </div>
   )
 }
@@ -63,9 +63,9 @@ function OverageBanner({ current }: { current: BillingCurrent }) {
     overage.api_calls && `API calls (${Math.round((current.usage.api_calls / (limits?.api_call_limit  ?? 1)) * 100)}% used)`,
   ].filter(Boolean)
   return (
-    <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 flex items-start gap-3">
-      <TrendingUp className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-      <p className="text-sm text-amber-300">
+    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-3">
+      <TrendingUp className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+      <p className="text-sm text-amber-700">
         Approaching plan limit: <span className="font-medium">{dims.join(', ')}</span>.{' '}
         Consider upgrading your plan to avoid overage charges.
       </p>
@@ -83,10 +83,10 @@ function CurrentPeriod({ current }: { current: BillingCurrent }) {
         <span className={`text-xs font-bold uppercase tracking-wider px-3 py-1.5 rounded-full border ${plan.color} ${plan.bg} ${plan.border}`}>
           {plan.label}
         </span>
-        <span className="text-xs text-[#484f58]">
+        <span className="text-xs text-gray-600">
           {MONTH_NAMES[current.period.month - 1]} {current.period.year} billing period
         </span>
-        <span className="ml-auto text-xs text-[#484f58] border border-[#1c2333] px-2 py-0.5 rounded-full">
+        <span className="ml-auto text-xs text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full">
           demo data
         </span>
       </div>
@@ -120,19 +120,19 @@ function CurrentPeriod({ current }: { current: BillingCurrent }) {
         />
       </div>
 
-      <div className="bg-[#0d1117] border border-[#1c2333] rounded-xl px-5 py-4 flex items-center justify-between">
+      <div className="bg-white border border-gray-200 rounded-xl px-5 py-4 flex items-center justify-between">
         <div className="space-y-0.5">
           {cost.base_fee_usd > 0 && (
-            <p className="text-xs text-[#484f58] font-mono">Base fee: {usd(cost.base_fee_usd)}</p>
+            <p className="text-xs text-gray-600 font-mono">Base fee: {usd(cost.base_fee_usd)}</p>
           )}
-          <p className="text-xs text-[#484f58] font-mono">Estimated period total</p>
+          <p className="text-xs text-gray-600 font-mono">Estimated period total</p>
         </div>
-        <p className="text-2xl font-mono font-bold text-[#e6edf3]">{usd(cost.total_usd)}</p>
+        <p className="text-2xl font-mono font-bold text-gray-900">{usd(cost.total_usd)}</p>
       </div>
 
       {limits && (limits.token_limit || limits.storage_gb_limit || limits.api_call_limit) && (
-        <div className="bg-[#0d1117] border border-[#1c2333] rounded-xl p-4 space-y-4">
-          <p className="text-xs text-[#8b949e] uppercase tracking-wider font-medium">Plan Usage</p>
+        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-4">
+          <p className="text-xs text-gray-600 uppercase tracking-wider font-medium">Plan Usage</p>
           <div className="space-y-3">
             <UsageBar value={usage.tokens}     limit={limits.token_limit}      unit="tokens" />
             <UsageBar value={usage.storage_gb} limit={limits.storage_gb_limit} unit="GB" />
@@ -147,26 +147,26 @@ function CurrentPeriod({ current }: { current: BillingCurrent }) {
 function HistoryTable({ history }: { history: BillingPeriod[] }) {
   if (history.length === 0) {
     return (
-      <p className="text-sm text-[#484f58] text-center py-8">No finalized billing periods yet.</p>
+      <p className="text-sm text-gray-600 text-center py-8">No finalized billing periods yet.</p>
     )
   }
   return (
-    <div className="bg-[#0d1117] border border-[#1c2333] rounded-xl overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-[#1c2333]">
-            <th className="text-left text-xs text-[#484f58] uppercase tracking-wider px-4 py-3">Period</th>
-            <th className="text-left text-xs text-[#484f58] uppercase tracking-wider px-4 py-3">Plan</th>
-            <th className="text-right text-xs text-[#484f58] uppercase tracking-wider px-4 py-3">Total</th>
-            <th className="text-right text-xs text-[#484f58] uppercase tracking-wider px-4 py-3">Finalized</th>
+          <tr className="border-b border-gray-200">
+            <th className="text-left text-xs text-gray-600 uppercase tracking-wider px-4 py-3">Period</th>
+            <th className="text-left text-xs text-gray-600 uppercase tracking-wider px-4 py-3">Plan</th>
+            <th className="text-right text-xs text-gray-600 uppercase tracking-wider px-4 py-3">Total</th>
+            <th className="text-right text-xs text-gray-600 uppercase tracking-wider px-4 py-3">Finalized</th>
           </tr>
         </thead>
         <tbody>
           {history.map((p, i) => {
             const plan = PLAN_STYLES[p.plan] ?? PLAN_STYLES.starter
             return (
-              <tr key={`${p.year}-${p.month}`} className={i < history.length - 1 ? 'border-b border-[#1c2333]' : ''}>
-                <td className="px-4 py-3 font-mono text-[#e6edf3]">
+              <tr key={`${p.year}-${p.month}`} className={i < history.length - 1 ? 'border-b border-gray-100' : ''}>
+                <td className="px-4 py-3 font-mono text-gray-900">
                   {MONTH_NAMES[p.month - 1]} {p.year}
                 </td>
                 <td className="px-4 py-3">
@@ -174,10 +174,10 @@ function HistoryTable({ history }: { history: BillingPeriod[] }) {
                     {plan.label}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-[#e6edf3]">
+                <td className="px-4 py-3 text-right font-mono text-gray-900">
                   {usd(p.total_usd)}
                 </td>
-                <td className="px-4 py-3 text-right font-mono text-xs text-[#484f58]">
+                <td className="px-4 py-3 text-right font-mono text-xs text-gray-600">
                   {p.finalized_at ? new Date(p.finalized_at).toLocaleDateString() : '—'}
                 </td>
               </tr>
@@ -193,16 +193,16 @@ export default function BillingPage() {
   const { current, history, loading } = useBilling()
 
   return (
-    <div className="min-h-screen bg-[#080b10] flex flex-col text-[#e6edf3]">
-      <header className="flex-shrink-0 bg-[#0d1117] border-b border-[#1c2333] px-6 py-3 flex items-center gap-4">
+    <div className="min-h-screen bg-gray-50 flex flex-col text-gray-900">
+      <header className="flex-shrink-0 bg-white border-b border-gray-200 shadow-sm px-6 py-3 flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-orange-700 to-amber-600 flex items-center justify-center">
             <DollarSign className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="text-sm font-bold text-white">
+          <span className="text-sm font-bold text-gray-900">
             ChatAI Agent
-            <span className="text-purple-400 mx-1">·</span>
-            <span className="text-[#8b949e] font-normal">Billing</span>
+            <span className="text-orange-500 mx-1">·</span>
+            <span className="text-gray-600 font-normal">Billing</span>
           </span>
         </div>
       </header>
@@ -210,28 +210,28 @@ export default function BillingPage() {
       <main className="flex-1 overflow-auto p-6 max-w-5xl mx-auto w-full space-y-8">
 
         <section>
-          <h2 className="text-xs text-[#484f58] uppercase tracking-widest font-medium mb-4 flex items-center gap-2">
+          <h2 className="text-xs text-gray-600 uppercase tracking-widest font-medium mb-4 flex items-center gap-2">
             <DollarSign className="w-3.5 h-3.5" /> Current Period
           </h2>
           {loading ? (
             <div className="space-y-3">
               {[1,2,3].map(i => (
-                <div key={i} className="bg-[#0d1117] border border-[#1c2333] rounded-xl h-16 animate-pulse" />
+                <div key={i} className="bg-white border border-gray-200 rounded-xl h-16 animate-pulse" />
               ))}
             </div>
           ) : current ? (
             <CurrentPeriod current={current} />
           ) : (
-            <p className="text-sm text-[#484f58]">No billing data available.</p>
+            <p className="text-sm text-gray-600">No billing data available.</p>
           )}
         </section>
 
         <section>
-          <h2 className="text-xs text-[#484f58] uppercase tracking-widest font-medium mb-4 flex items-center gap-2">
+          <h2 className="text-xs text-gray-600 uppercase tracking-widest font-medium mb-4 flex items-center gap-2">
             <TrendingUp className="w-3.5 h-3.5" /> Billing History
           </h2>
           {loading ? (
-            <div className="bg-[#0d1117] border border-[#1c2333] rounded-xl h-32 animate-pulse" />
+            <div className="bg-white border border-gray-200 rounded-xl h-32 animate-pulse" />
           ) : (
             <HistoryTable history={history} />
           )}

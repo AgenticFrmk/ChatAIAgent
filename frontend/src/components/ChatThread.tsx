@@ -23,10 +23,10 @@ export default function ChatThread({ messages, isRunning, awaitingReply }: Props
       <div className="max-w-3xl mx-auto space-y-4">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
-            <p className="text-[#484f58] text-sm">
+            <p className="text-gray-600 text-sm">
               Describe an incident and the agent will investigate, plan, and remediate.
             </p>
-            <p className="text-[#30363d] text-xs">
+            <p className="text-gray-600 text-xs">
               e.g. "Our VPN tunnels to Boston and Chicago keep dropping. Phase 2 renegotiating."
             </p>
           </div>
