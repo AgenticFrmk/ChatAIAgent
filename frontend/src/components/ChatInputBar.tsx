@@ -18,7 +18,6 @@ export default function ChatInputBar({ onSend, disabled, placeholder }: Props) {
     if (!canSend) return
     const message = text.trim()
     setText('')
-    // Reset textarea height
     if (textareaRef.current) textareaRef.current.style.height = 'auto'
     setSending(true)
     try {
@@ -43,12 +42,12 @@ export default function ChatInputBar({ onSend, disabled, placeholder }: Props) {
   }
 
   return (
-    <div className="flex-shrink-0 border-t border-[#1c2333] bg-[#0d1117] px-4 py-3">
+    <div className="flex-shrink-0 border-t border-gray-200 bg-white px-4 py-3">
       <div className="max-w-3xl mx-auto flex gap-3 items-end">
-        <div className={`flex-1 bg-[#161b22] border rounded-2xl transition-colors ${
+        <div className={`flex-1 bg-gray-50 border rounded-2xl transition-colors ${
           disabled
-            ? 'border-[#1c2333] opacity-50 cursor-not-allowed'
-            : 'border-[#30363d] focus-within:border-purple-500/50 focus-within:ring-1 focus-within:ring-purple-500/20'
+            ? 'border-gray-200 opacity-50 cursor-not-allowed'
+            : 'border-gray-300 focus-within:border-orange-400 focus-within:ring-1 focus-within:ring-orange-200'
         }`}>
           <textarea
             ref={textareaRef}
@@ -59,7 +58,7 @@ export default function ChatInputBar({ onSend, disabled, placeholder }: Props) {
             disabled={disabled || sending}
             placeholder={disabled ? 'Agent is working…' : placeholder}
             rows={1}
-            className="w-full bg-transparent px-4 py-3 text-sm text-[#e6edf3] placeholder-[#484f58]
+            className="w-full bg-transparent px-4 py-3 text-sm text-gray-900 placeholder-gray-500
                        outline-none resize-none disabled:cursor-not-allowed"
             style={{ maxHeight: '160px' }}
           />
@@ -69,14 +68,14 @@ export default function ChatInputBar({ onSend, disabled, placeholder }: Props) {
           onClick={() => void handleSend()}
           disabled={!canSend}
           className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all
-                     bg-purple-600 hover:bg-purple-500 disabled:opacity-30 disabled:cursor-not-allowed
-                     disabled:hover:bg-purple-600"
+                     bg-orange-700 hover:bg-orange-800 disabled:opacity-30 disabled:cursor-not-allowed
+                     disabled:hover:bg-orange-700"
         >
           <Send className="w-4 h-4 text-white" />
         </button>
       </div>
 
-      <p className="text-[10px] text-[#484f58] text-center mt-2">
+      <p className="text-[10px] text-gray-600 text-center mt-2">
         Enter to send · Shift+Enter for new line
       </p>
     </div>

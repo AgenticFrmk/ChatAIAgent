@@ -1,4 +1,4 @@
-.PHONY: build up run logs down clean open help
+.PHONY: build up run logs down clean open e2e pact help
 
 COMPOSE = docker compose
 
@@ -12,6 +12,8 @@ help:
 	@echo "  down    Stop and remove containers"
 	@echo "  clean   Stop containers and delete volumes (wipes DBs + RSA keys)"
 	@echo "  open    Open the ChatAIAgent UI in the browser"
+	@echo "  e2e     Run end-to-end distillation smoke test (stack must be up)"
+	@echo "  pact    Run all frontend Pact consumer tests"
 
 build: .env
 	$(COMPOSE) build
@@ -36,6 +38,13 @@ down:
 
 clean:
 	$(COMPOSE) down -v
+
+e2e: .env
+	@echo "Running end-to-end distillation smoke test..."
+	@bash scripts/e2e_distillation.sh
+
+pact:
+	@cd frontend && npm run test:pact
 
 .env:
 	@if [ ! -f .env ]; then \

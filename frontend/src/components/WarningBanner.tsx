@@ -19,8 +19,8 @@ export default function WarningBanner({ budgetUsed }: Props) {
           transition={{ duration: 0.3, ease: 'easeOut' }}
           className={`w-full flex items-center justify-center gap-2 text-xs font-medium overflow-hidden flex-shrink-0
                       ${isCritical
-                        ? 'bg-red-500/15 border-b border-red-500/30 text-red-400'
-                        : 'bg-amber-500/10 border-b border-amber-500/20 text-amber-400'
+                        ? 'bg-red-50 border-b border-red-200 text-red-700'
+                        : 'bg-amber-50 border-b border-amber-200 text-amber-700'
                       }`}
         >
           <motion.span

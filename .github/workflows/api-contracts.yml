@@ -1,0 +1,18 @@
+name: API Contracts
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  pact-gateway:
+    uses: AgenticFrmk/.github/.github/workflows/publish-pacts.yml@main
+    with:
+      consumer-name: ChatAiAgent
+      pact-dir: frontend/pacts
+      node-version: "20"
+      install-cmd: cd frontend && npm ci
+      test-cmd: cd frontend && npm run test:pact
+    secrets:
+      PACTFLOW_BASE_URL: ${{ secrets.PACTFLOW_BASE_URL }}
+      PACTFLOW_TOKEN: ${{ secrets.PACTFLOW_TOKEN }}

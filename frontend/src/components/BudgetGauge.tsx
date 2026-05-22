@@ -70,7 +70,7 @@ export default function BudgetGauge({ budget, history }: Props) {
           <circle
             cx={CX} cy={CY} r={R}
             fill="none"
-            stroke="#1c2333"
+            stroke="#e5e7eb"
             strokeWidth={STROKE}
             strokeDasharray={`${ARC_LEN} ${CIRCUMFERENCE}`}
             strokeLinecap="round"
@@ -112,8 +112,8 @@ export default function BudgetGauge({ budget, history }: Props) {
             ? `${budget.estimated_tokens.toLocaleString()} / ${budget.context_limit.toLocaleString()}`
             : `0 / ${(15000).toLocaleString()}`}
         </motion.p>
-        <span className="text-[9px] text-[#484f58] font-mono">tokens</span>
-        <span className="text-[9px] text-[#484f58] uppercase tracking-widest">
+        <span className="text-[9px] text-gray-600 font-mono">tokens</span>
+        <span className="text-[9px] text-gray-600 uppercase tracking-widest">
           {isCritical ? 'critical' : isWarning ? 'warning' : 'normal'}
         </span>
       </div>
@@ -141,7 +141,7 @@ export default function BudgetGauge({ budget, history }: Props) {
             initial={{ opacity: 0, y: 4, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0 }}
-            className="text-[9px] text-purple-400 bg-purple-500/10 border border-purple-500/20 rounded px-1.5 py-0.5 text-center leading-tight"
+            className="text-[9px] text-orange-700 bg-orange-50 border border-orange-200 rounded px-1.5 py-0.5 text-center leading-tight"
           >
             ↳ Compacted · −{budget.messages_evicted} msgs
           </motion.div>
