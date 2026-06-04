@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { Zap } from 'lucide-react'
 import type { ChatMessage as ChatMessageType } from '../lib/types'
 import ChatMessage from './ChatMessage'
 import ThinkingBubble from './ThinkingBubble'
@@ -31,9 +32,22 @@ export default function ChatThread({ messages, isRunning, awaitingReply }: Props
             </p>
           </div>
         )}
-        {messages.map(msg => (
-          <ChatMessage key={msg.id} msg={msg} />
-        ))}
+        {messages.map(msg => {
+          if (msg.kind === 'compaction') {
+            return (
+              <div key={msg.id} className="flex items-center gap-3 px-6 py-2 select-none">
+                <div className="flex-1 h-px bg-orange-200" />
+                <span className="text-[11px] text-orange-600 flex items-center gap-1 whitespace-nowrap">
+                  <Zap className="w-3 h-3" />
+                  Context compacted
+                  {msg.messagesEvicted ? ` — ${msg.messagesEvicted} older messages summarized` : ''}
+                </span>
+                <div className="flex-1 h-px bg-orange-200" />
+              </div>
+            )
+          }
+          return <ChatMessage key={msg.id} msg={msg} />
+        })}
         {showThinking && <ThinkingBubble />}
         <div ref={bottomRef} />
       </div>

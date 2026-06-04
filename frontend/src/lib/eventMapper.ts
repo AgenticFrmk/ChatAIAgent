@@ -42,6 +42,16 @@ export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
       return [{ name: 'clarification_needed', data: { question: clarification['question'] as string } }]
     }
 
+    // policy_review — payload has {steps: PlanStep[]}
+    if (next.includes('policy_review')) {
+      const steps = (payload['steps'] ?? []) as Record<string, unknown>[]
+      const needsApproval = steps.some(s => s['policy'] === 'require_approval')
+      return [{
+        name: 'plan_ready',
+        data: { steps, needs_approval: needsApproval },
+      }]
+    }
+
     // hitl_step_review — payload has {step_number, signal, proposed_action, message}
     if (next.includes('hitl_step_review')) {
       return [{
@@ -88,6 +98,16 @@ export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
   const node = ev.node
   const rawData = ev.data as Record<string, unknown> | undefined
   const output = rawData?.['output'] as Record<string, unknown> | undefined
+
+  // plan on_chain_end — no approval required, just display
+  if (ev.event === 'on_chain_end' && node === 'plan') {
+    const steps = (output?.['steps'] ?? []) as Record<string, unknown>[]
+    if (steps.length > 0) {
+      const needsApproval = steps.some(s => s['policy'] === 'require_approval')
+      return [{ name: 'plan_ready', data: { steps, needs_approval: needsApproval } }]
+    }
+    return []
+  }
 
   // act on_chain_start — extract tool name from state to show running indicator
   if (ev.event === 'on_chain_start' && node === 'act') {
