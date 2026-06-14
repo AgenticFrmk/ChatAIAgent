@@ -106,46 +106,51 @@ The `x-calling-agent` header that OPA reads was placed there by Envoy from a cry
 
 ---
 
-## Live Demo: OOM Alert in Production
+## Live Demo: VPN Tunnel Down at Branch Office
 
-**Scenario**: A memory leak in the payment-service is causing OOM kills, pod restarts, and SLA breaches.
+**Scenario**: The VPN tunnel `vpn-hq-001` on router `BRANCH-BOSTON-R01` (Cradlepoint IBR1700) is down and flapping. The network engineer reports 7 tunnel resets in the last hour with `ICMP_FRAG_NEEDED` errors. Connectivity to HQ is intermittent.
 
-### Step 1 — User alerts the SRE Agent
-The user sends an alert through the UI. The request passes through Envoy: JWT validated, `x-target-agent: sre-agent` injected by header_mutation, OPA allows (sre-agent is the primary entry point for any authenticated user).
+### Step 1 — Engineer alerts the SRE Agent
+The engineer types the incident into the chat UI. The request flows through Envoy: JWT validated, `x-target-agent: sre-agent` injected by header_mutation, OPA allows (sre-agent is the primary entry point for any authenticated user).
 
-### Step 2 — SRE Agent produces findings
+### Step 2 — SRE Agent investigates via NCM API
+The agent calls the Cradlepoint NCM API tools in sequence — checking router status, WAN telemetry, and tunnel alerts:
+
 ```
-CPU 94% on node-prod-3
-Heap OOM pattern detected in payment-service
-3 pod restarts in last 15 min
-p99 latency 4.2s (SLA breach)
-Root cause: memory leak in payment-processor container
-Recommendation: terminate affected pods, drain the node
+Router BRANCH-BOSTON-R01 (IBR1700) — state: online, firmware: 7.22.40
+WAN signal: RSRP -88 dBm, SINR 14.2 dB, signal_percent: 75% (LTE/AT&T)
+Tunnel alert: vpn-hq-001 — ICMP_FRAG_NEEDED, MTU 1500, flap_count: 7
+Root cause: MTU mismatch causing IP fragmentation on LTE uplink
+Fix: set MTU 1372 with MSS clamping at 1332, reboot modem to renegotiate tunnel
 ```
 
 ### Step 3 — Policy Gate is DENY
-`chain_enabled = false` in OPA. The SRE Agent exchanges the user JWT for an OBO token and calls `/remediation/graph/invoke` via Envoy. OPA denies: `chain_enabled` is false. The UI shows the Policy Gate locked. The user cannot proceed, even though the OBO token is cryptographically valid.
+By default `chain_enabled = false` in OPA. The SRE Agent exchanges the user JWT for a 5-minute OBO token and calls `/remediation/graph/invoke` via Envoy. OPA denies: `chain_enabled` is false.
 
-### Step 4 — Operator unlocks the Policy Gate
-The operator flips the toggle in the UI:
+The chat shows:
+```
+⛔ Remediation blocked by OPA (DENY) — view policy details →
+```
+The Remediation page confirms the block. The engineer cannot push config changes to the router — even though the OBO token is cryptographically valid — because the admin has not authorized automated remediation.
+
+### Step 4 — Admin unlocks the Policy Gate
+The admin opens the Policy page in the UI and flips the toggle:
 ```http
 PUT /control/policy/chain-rule
 { "enabled": true }
 ```
-AgentControlPlane calls OPA's data API (`PUT /v1/data/routing/chain_enabled`). Takes effect immediately — no OPA restart, no Envoy restart.
+AgentControlPlane calls OPA's data API (`PUT /v1/data/routing/chain_enabled`). Takes effect immediately — no OPA restart, no Envoy restart, no redeployment.
 
-### Step 5 — Chain succeeds
-The OBO token flows through Envoy. `x-calling-agent: sre-agent` is injected by jwt_authn. OPA allows. The Remediation Agent generates a structured plan:
+### Step 5 — Chain succeeds, plan streams live
+The engineer re-runs the query. The OBO token flows through Envoy. `x-calling-agent: sre-agent` is injected by jwt_authn from the verified token claim. OPA allows. The Remediation Agent generates a structured plan — tokens stream live to the Remediation page as they are produced:
 
 | Step | Action | Risk |
 |---|---|---|
-| 1 | `kubectl cordon node-prod-3` | SAFE |
-| 2 | `kubectl top pods -n production` | SAFE |
-| 3 | `kubectl delete pod payment-processor-7d9f -n production` | DESTRUCTIVE |
-| 4 | `kubectl scale deploy payment-service --replicas=0 -n production` | DESTRUCTIVE |
-| 5 | `kubectl drain node-prod-3 --ignore-daemonsets` | DESTRUCTIVE |
+| 1 | `GET /ncm/api/v2/router_alerts/` — confirm tunnel alert active | SAFE |
+| 2 | `POST /ncm/api/v2/reboot_activity/` — reboot modem on BRANCH-BOSTON-R01 | SAFE |
+| 3 | `PATCH /ncm/api/v2/configuration_managers/550e8400-0001/` — set MTU 1372, MSS clamp 1332 | DESTRUCTIVE |
 
-SAFE steps execute. DESTRUCTIVE steps require human approval before execution.
+SAFE steps are described in the plan. DESTRUCTIVE steps are flagged for human review before execution. The tunnel renegotiates and clears.
 
 ---
 
