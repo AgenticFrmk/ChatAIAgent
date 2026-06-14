@@ -7,14 +7,16 @@ from typing import Any, AsyncIterator
 
 import structlog
 from fastapi import FastAPI, Query, Request
+from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
 
-from agentcore.runtime import BaseAgent, serve
-from agentcore.llm.config import LLMConfig
-from agentcore.logging_setup import configure_logging
+from worker_agent.runtime import BaseAgent, serve
+from worker_agent.llm import LLMConfig
+from worker_agent.logging_setup import configure_logging
+from agentcore.plugins import SafetyFilter
 from agent.graph.builder import build_graph, _make_session_factory
-from agent.observability import configure_tracing
+from worker_agent.observability import configure_tracing
 
 log = structlog.get_logger()
 
@@ -72,14 +74,21 @@ class SREAgent(BaseAgent):
     def version(self) -> str:
         return "1.0.0"
 
+    @property
+    def _safety(self) -> SafetyFilter:
+        policy_url = os.environ.get("POLICY_SERVICE_URL", "http://policy-service:8090")
+        if not hasattr(self, "_safety_filter"):
+            self._safety_filter = SafetyFilter(policy_url=policy_url)
+        return self._safety_filter
+
     async def on_start(self) -> None:
         from langchain_anthropic import ChatAnthropic
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
         import redis.asyncio as aioredis
-        from agentcore.registry.scalable import ScalableRegistryClient
-        from agentcore.dispatch import ToolDispatcher
+        from worker_agent.registry.scalable import ScalableRegistryClient
+        from worker_agent.tools.dispatcher import ToolDispatcher
         from sqlalchemy.ext.asyncio import create_async_engine
-        from agent.persistence.models import PlanHistory
+        from worker_agent.persistence.models import PlanHistory
 
         checkpointer_url = os.environ["CHECKPOINTER_URL"]
         registry_url = os.environ.get("REGISTRY_SERVICE_URL", "")
@@ -91,24 +100,32 @@ class SREAgent(BaseAgent):
             reasoning_llm=ChatAnthropic(model="claude-opus-4-6"),
         )
 
+        # Redis first — passed to registry and dispatcher for caching
+        self._redis = aioredis.from_url(_REDIS_URL, decode_responses=True)
+        await self._redis.ping()
+
         self._registry = ScalableRegistryClient(
             registry_url,
             cache_ttl_seconds=int(os.environ.get("REGISTRY_CACHE_TTL_SECONDS", "60")),
             auth_url=os.environ.get("REGISTRY_AUTH_URL") or None,
             username=os.environ.get("REGISTRY_USERNAME") or None,
             password=os.environ.get("REGISTRY_PASSWORD") or None,
+            redis_client=self._redis,
+            rag_cache_ttl=int(os.environ.get("RAG_CACHE_TTL_SECONDS", "86400")),
         )
 
         tool_auth_enabled = os.environ.get("TOOL_AUTH_ENABLED", "false").lower() == "true"
         if tool_auth_enabled:
-            from agentcore.credentials import CredentialResolver
+            from worker_agent.tools.credentials import CredentialResolver
             credential_resolver = CredentialResolver.from_env()
         else:
             credential_resolver = None
-        self._tool_dispatcher = ToolDispatcher(self._registry, credential_resolver=credential_resolver)
-
-        self._redis = aioredis.from_url(_REDIS_URL, decode_responses=True)
-        await self._redis.ping()
+        self._tool_dispatcher = ToolDispatcher(
+            self._registry,
+            credential_resolver=credential_resolver,
+            redis_client=self._redis,
+            tool_cache_ttl=int(os.environ.get("TOOL_CACHE_TTL_SECONDS", "3600")),
+        )
 
         agentcore_db_url = os.environ.get(
             "AGENTCORE_DB_URL",
@@ -136,7 +153,7 @@ class SREAgent(BaseAgent):
 
     def _get_ragas_collector(self, thread_id: str):
         if thread_id not in self._ragas_collectors:
-            from agentcore.observability import RAGASCollector
+            from agentcore.plugins import RAGAsPlugin as RAGASCollector
             self._ragas_collectors[thread_id] = RAGASCollector()
         return self._ragas_collectors[thread_id]
 
@@ -145,7 +162,7 @@ class SREAgent(BaseAgent):
             slm_url = os.environ.get("SLM_PLATFORM_URL", "")
             agent_id = os.environ.get("AGENT_ID", "sre-agent")
             if slm_url:
-                from agentcore.observability import MetricsCollector
+                from agentcore.plugins import MetricsPlugin as MetricsCollector
                 self._collectors[thread_id] = MetricsCollector(
                     agent_id=agent_id,
                     slm_url=slm_url,
@@ -209,27 +226,6 @@ class SREAgent(BaseAgent):
         except Exception as exc:
             log.warning("sre-agent.append_event.failed", thread_id=thread_id, error=str(exc))
 
-    async def _scan_output(self, thread_id: str, text: str) -> None:
-        """Best-effort async output scan via PolicyService. Never blocks the stream."""
-        policy_url = os.environ.get("POLICY_SERVICE_URL", "http://policy-service:8090")
-        import httpx
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                resp = await client.post(
-                    f"{policy_url}/validate",
-                    json={"text": text[:8000], "scope": "output"},
-                )
-                if resp.status_code == 200:
-                    body = resp.json()
-                    if body.get("pii_detected") or body.get("secrets_present"):
-                        log.warning(
-                            "sre-agent.output_scan.flagged",
-                            thread_id=thread_id,
-                            pii=body.get("pii_detected"),
-                            secrets=body.get("secrets_present"),
-                        )
-        except Exception as exc:
-            log.warning("sre-agent.output_scan.error", thread_id=thread_id, error=str(exc))
 
     async def publish_stream(self, thread_id: str, input_data: Any, lg_config: dict) -> None:
         channel = f"stream:{thread_id}"
@@ -272,7 +268,7 @@ class SREAgent(BaseAgent):
             await self._append_event(thread_id, usage_msg)
 
             if output_texts:
-                asyncio.create_task(self._scan_output(thread_id, " ".join(output_texts)))
+                asyncio.create_task(self._safety.scan_output(thread_id, " ".join(output_texts)))
 
             graph_state = await self._graph.aget_state(lg_config)
             if graph_state.next:
@@ -306,11 +302,13 @@ class SREAgent(BaseAgent):
 
 def _extract_auth_from_headers(headers) -> dict | None:
     """Extract auth context from Envoy-injected headers (set by jwt_authn claim_to_headers).
-    Returns None if headers are absent so callers can fall back to the request body auth dict."""
+    Also captures the raw JWT so graph nodes can call OBO token exchange downstream."""
     user_id = headers.get("x-user-id")
     tenant_id = headers.get("x-tenant-id")
     if user_id and tenant_id:
-        return {"user_id": user_id, "tenant_id": tenant_id}
+        raw = headers.get("authorization", "")
+        token = raw.removeprefix("Bearer ").removeprefix("bearer ").strip()
+        return {"user_id": user_id, "tenant_id": tenant_id, "token": token}
     return None
 
 
@@ -335,6 +333,15 @@ class CompactRequest(BaseModel):
     messages:  list[dict]
 
 
+class PingRequest(BaseModel):
+    message: str
+
+
+class ChainRequest(BaseModel):
+    message:   str
+    thread_id: str = ""
+
+
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> FastAPI:
@@ -346,6 +353,11 @@ def create_app() -> FastAPI:
     async def graph_invoke_stream(req: InvokeStreamRequest, request: Request) -> dict:
         auth = _extract_auth_from_headers(request.headers) or req.auth
         lg_config = agent._make_config(req.thread_id, auth, req.auto_approve)
+        if agent._redis:
+            try:
+                await agent._redis.delete("remediation:latest")
+            except Exception:
+                pass
         asyncio.create_task(
             agent.publish_stream(
                 req.thread_id,
@@ -384,6 +396,153 @@ def create_app() -> FastAPI:
         log.info("sre-agent.resume_stream.started", thread_id=req.thread_id)
         return {"status": "resumed"}
 
+    @app.post("/graph/ping/stream")
+    async def graph_ping_stream(req: PingRequest) -> StreamingResponse:
+        """Demo endpoint: quick SRE Agent liveness reply (no LLM, no graph)."""
+        async def generate():
+            yield f'data: {json.dumps({"type": "chain_event", "step": "sre_response", "from_agent": "sre-agent", "content": f"SRE Agent online. Received: {req.message}"})}\n\n'
+            yield f'data: {json.dumps({"type": "done"})}\n\n'
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
+    @app.post("/graph/chain/stream")
+    async def graph_chain_stream(req: ChainRequest, request: Request) -> StreamingResponse:
+        """Real zero-trust demo: runs the actual SRE agent LangGraph on a VPN incident,
+        streams real node execution (intent → think → tool calls → observe → report),
+        then chains to remediation-agent via Envoy with an OBO token (RFC 8693).
+
+        The OBO token is signed by AuthService — Envoy validates it and injects
+        x-calling-agent from the calling_agent claim. OPA enforces the chain rule.
+        """
+        import httpx
+        import uuid as _uuid
+
+        auth_header = request.headers.get("authorization", "")
+        user_token  = auth_header.removeprefix("Bearer ").removeprefix("bearer ").strip()
+        auth        = _extract_auth_from_headers(request.headers) or {}
+        envoy_url   = os.environ.get("ENVOY_URL",        "http://envoy:10000")
+        auth_svc    = os.environ.get("AUTH_SERVICE_URL", "http://auth-service:9000")
+
+        # Default to the real-world VPN scenario if no message supplied
+        message   = req.message or (
+            "Our VPN tunnels to Boston and Chicago keep dropping. "
+            "Phase 2 is renegotiating repeatedly — it used to be stable. "
+            "Investigate and produce a remediation plan."
+        )
+        thread_id = req.thread_id or f"chain-{_uuid.uuid4().hex[:8]}"
+
+        _NODE_LABELS = {
+            "manage_context":   "Managing context window",
+            "extract_intent":   "Classifying VPN intent",
+            "clarify":          "Requesting clarification",
+            "check_plan_cache": "Checking plan cache",
+            "think":            "Planning next action",
+            "hitl_step_review": "Step review (auto-approved)",
+            "act":              "Executing tool call",
+            "observe":          "Analysing tool output",
+            "analysis_summary": "Summarising analysis",
+            "propose_fix":      "Proposing remediation",
+            "report":           "Generating report",
+        }
+
+        async def generate():
+            # ── Step 1: announce start ────────────────────────────────────────
+            yield f'data: {json.dumps({"type": "chain_event", "step": "sre_start", "from_agent": "user", "to_agent": "sre-agent", "opa": "ALLOW", "reason": "JWT valid · sre-agent is primary entry point"})}\n\n'
+
+            # ── Step 2: run the REAL SRE agent graph ─────────────────────────
+            lg_config = agent._make_config(thread_id, auth, auto_approve=True)
+            node_log: list[str] = []
+
+            try:
+                async for event in agent._graph.astream_events(
+                    {"messages": [HumanMessage(content=message)]},
+                    config=lg_config,
+                    version="v2",
+                ):
+                    ev_type = event.get("event", "")
+                    node    = event.get("metadata", {}).get("langgraph_node", "")
+                    if not node or event.get("name") != node:
+                        continue
+                    if ev_type == "on_chain_start":
+                        label = _NODE_LABELS.get(node, node)
+                        node_log.append(f"[{node}] {label}")
+                        yield f'data: {json.dumps({"type": "chain_event", "step": "sre_node", "node": node, "label": label, "from_agent": "sre-agent", "log": node_log[:] })}\n\n'
+            except Exception as exc:
+                log.error("sre-agent.graph.error", error=str(exc))
+                yield f'data: {json.dumps({"type": "chain_event", "step": "error", "detail": str(exc)})}\n\n'
+                yield f'data: {json.dumps({"type": "done"})}\n\n'
+                return
+
+            # ── Step 3: extract real findings from graph state ────────────────
+            final = await agent._graph.aget_state(lg_config)
+            vals  = final.values if final else {}
+
+            analysis_findings = vals.get("analysis_findings") or []
+            step_history      = vals.get("step_history")      or []
+            remediation_plan  = vals.get("remediation_plan")  or ""
+            intent            = vals.get("intent")
+            report_text       = vals.get("report")            or ""
+
+            findings = (
+                f"Intent: {intent.action if intent else 'VPN tunnel investigation'}\n"
+                f"Domain: {intent.domain  if intent else 'connectivity.cradlepoint'}\n\n"
+                + ("Analysis findings:\n" + "\n".join(f"  - {f}" for f in analysis_findings) + "\n\n" if analysis_findings else "")
+                + ("Tool steps executed:\n" + "\n".join(f"  [{s['tool_name']}]: {s['finding']}" for s in step_history) + "\n\n" if step_history else "")
+                + (f"Proposed remediation:\n  {remediation_plan}\n\n" if remediation_plan else "")
+                + (f"Summary:\n  {report_text}" if report_text else "")
+            ) or message
+
+            yield f'data: {json.dumps({"type": "chain_event", "step": "sre_findings", "from_agent": "sre-agent", "content": findings, "nodes_executed": len(node_log)})}\n\n'
+            await asyncio.sleep(0.2)
+
+            # ── Step 4: exchange user JWT for OBO token (RFC 8693) ────────────
+            obo_token: str | None = None
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as c:
+                    r = await c.post(
+                        f"{auth_svc}/auth/token/exchange",
+                        json={"assertion": user_token, "scope": "remediation-agent", "calling_agent": "sre-agent"},
+                    )
+                    r.raise_for_status()
+                    obo_token = r.json()["access_token"]
+            except Exception as exc:
+                log.error("sre-agent.obo_exchange.failed", error=str(exc))
+                yield f'data: {json.dumps({"type": "chain_event", "step": "error", "detail": f"OBO exchange failed: {exc}"})}\n\n'
+                yield f'data: {json.dumps({"type": "done"})}\n\n'
+                return
+
+            yield f'data: {json.dumps({"type": "chain_event", "step": "obo_issued", "from_agent": "sre-agent", "detail": "AuthService signed OBO token: act.sub=sre-agent · aud=remediation-agent · exp=5min"})}\n\n'
+            await asyncio.sleep(0.15)
+
+            # ── Step 5: announce chain call ───────────────────────────────────
+            yield f'data: {json.dumps({"type": "chain_event", "step": "chain_request", "from_agent": "sre-agent", "to_agent": "remediation-agent", "headers": {"Authorization": "Bearer <obo-token>", "x-calling-agent": "injected by Envoy jwt_authn from calling_agent claim", "x-target-agent": "injected by Envoy header_mutation"}})}\n\n'
+            await asyncio.sleep(0.15)
+
+            # ── Step 6: call remediation-agent via Envoy (OBO token only) ─────
+            # x-calling-agent is NOT set here — Envoy injects it from the verified JWT.
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as c:
+                    resp = await c.post(
+                        f"{envoy_url}/remediation/graph/invoke",
+                        json={"message": findings, "thread_id": thread_id},
+                        headers={"Authorization": f"Bearer {obo_token}", "Content-Type": "application/json"},
+                    )
+                if resp.status_code == 403:
+                    yield f'data: {json.dumps({"type": "chain_event", "step": "opa_deny", "from_agent": "sre-agent", "to_agent": "remediation-agent", "opa": "DENY", "reason": "OPA denied: chain_enabled=false · toggle the Policy Gate to ALLOW"})}\n\n'
+                else:
+                    result     = resp.json()
+                    plan       = result.get("plan", {})
+                    steps      = plan.get("steps", [])
+                    destructive = [s for s in steps if s.get("risk") == "DESTRUCTIVE"]
+                    yield f'data: {json.dumps({"type": "chain_event", "step": "remediation_response", "from_agent": "remediation-agent", "to_agent": "sre-agent", "opa": "ALLOW", "reason": "OBO JWT verified · x-calling-agent: sre-agent · chain rule matched", "plan": plan, "destructive_count": len(destructive)})}\n\n'
+            except Exception as exc:
+                log.error("sre-agent.chain.error", error=str(exc))
+                yield f'data: {json.dumps({"type": "chain_event", "step": "error", "detail": str(exc)})}\n\n'
+
+            yield f'data: {json.dumps({"type": "done"})}\n\n'
+
+        return StreamingResponse(generate(), media_type="text/event-stream")
+
     @app.post("/graph/compact")
     async def compact_messages(req: CompactRequest) -> dict:
         from langchain_core.messages import messages_from_dict
@@ -396,7 +555,7 @@ def create_app() -> FastAPI:
     async def get_history(tenant_id: str = Query(""), limit: int = Query(20, le=100)) -> list[dict]:
         if agent._db_session_factory is None:
             return []
-        from agent.persistence import plan_history_repo
+        from worker_agent.persistence import plan_history_repo
         try:
             async with agent._db_session_factory() as session:
                 rows = await plan_history_repo.get_all_recent(session, limit=limit, tenant_id=tenant_id)
@@ -416,6 +575,24 @@ def create_app() -> FastAPI:
         except Exception as exc:
             log.warning("sre-agent.history.error", error=str(exc))
             return []
+
+    @app.get("/remediation-result")
+    async def remediation_result() -> dict:
+        """Return the latest remediation plan published by chain_remediate node.
+        RemediationPage polls this every 2s — updates the moment sre-agent chains."""
+        if agent._redis is None:
+            return {"status": "no_data"}
+        raw = await agent._redis.get("remediation:latest")
+        if not raw:
+            return {"status": "no_data"}
+        import json as _json
+        return {"status": "ok", "data": _json.loads(raw)}
+
+    @app.delete("/remediation-result")
+    async def clear_remediation_result() -> dict:
+        if agent._redis:
+            await agent._redis.delete("remediation:latest")
+        return {"status": "cleared"}
 
     @app.get("/events/{thread_id}")
     async def get_events(thread_id: str, from_index: int = Query(0, alias="from")) -> dict:

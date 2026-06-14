@@ -4,11 +4,11 @@ import structlog
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.evolution.patterns import (
+from worker_agent.evolution.patterns import (
     extract_consistent_orderings,
     extract_parallel_patterns,
 )
-from agent.persistence.models import PlanHistory, PlaybookSuggestion
+from worker_agent.persistence.models import PlanHistory, PlaybookSuggestion
 
 log = structlog.get_logger()
 

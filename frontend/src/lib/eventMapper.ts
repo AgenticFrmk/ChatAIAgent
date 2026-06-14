@@ -97,6 +97,16 @@ export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
   const rawData = ev.data as Record<string, unknown> | undefined
   const output = rawData?.['output'] as Record<string, unknown> | undefined
 
+  // chain_remediate on_chain_end — surface OPA decision to the chat
+  if (ev.event === 'on_chain_end' && node === 'chain_remediate') {
+    const resp = output?.['remediation_response'] as Record<string, unknown> | undefined
+    const opa_decision = (resp?.['opa_decision'] as string) ?? 'UNKNOWN'
+    return [
+      { name: 'node_done', data: { node } },
+      { name: 'chain_result', data: { opa_decision } },
+    ]
+  }
+
   // plan on_chain_end — no approval required, just display
   if (ev.event === 'on_chain_end' && node === 'plan') {
     const steps = (output?.['steps'] ?? []) as Record<string, unknown>[]

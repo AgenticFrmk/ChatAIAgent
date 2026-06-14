@@ -5,9 +5,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from agent.graph.state import AgentState
-from agentcore.llm.config import LLMConfig
-from agentcore.observability.metrics import get_collector
-from agentcore.observability.ragas import get_ragas_collector
+from worker_agent.llm import LLMConfig
+from agentcore.plugins import get_collector
+from agentcore.plugins import get_ragas_collector
 
 _APPROVALS = {"yes", "y", "approve", "approved", "ok", "okay", "proceed", "sure"}
 _REJECTIONS = {"no", "n", "reject", "rejected", "cancel", "stop", "abort"}

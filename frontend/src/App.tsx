@@ -4,6 +4,8 @@ import ChatPage from './pages/ChatPage'
 import AboutPage from './pages/AboutPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import BillingPage from './pages/BillingPage'
+import PolicyPage from './pages/PolicyPage'
+import RemediationPage from './pages/RemediationPage'
 
 export default function App() {
   return (
@@ -11,6 +13,8 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/chat" element={<ChatPage />} />
+        <Route path="/demo" element={<PolicyPage />} />
+        <Route path="/remediation" element={<RemediationPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />
         <Route path="/billing" element={<BillingPage />} />

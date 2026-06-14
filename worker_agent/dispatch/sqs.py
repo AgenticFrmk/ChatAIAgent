@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from agent.dispatch.base import (
+from worker_agent.dispatch.base import (
     DispatchAdapter,
     LeaseExpiredError,
     StepMessage,

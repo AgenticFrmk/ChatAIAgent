@@ -94,8 +94,12 @@ export function formatObservation(tao: Tao): string {
   return `${icon} **${tao.tool_name}** — ${tao.finding}`
 }
 
-export function formatReport(report: ReportData): string {
-  const lines: string[] = ['**Incident resolved.**\n', report.text]
+export function formatReport(report: ReportData, opaDecision?: string): string {
+  const allowed = !opaDecision || opaDecision === 'ALLOW' || opaDecision === 'UNKNOWN'
+  const header = allowed
+    ? '**Incident report**\n'
+    : '**Incident report** _(remediation blocked — analysis only)_\n'
+  const lines: string[] = [header, report.text]
 
   const metrics = Object.entries(report.metrics).filter(([, v]) => v !== undefined)
   if (metrics.length > 0) {

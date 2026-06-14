@@ -5,13 +5,13 @@ import uuid
 
 import structlog
 
-from agent.dispatch.base import (
+from worker_agent.dispatch.base import (
     DispatchAdapter,
     LeaseExpiredError,
     StepMessage,
     StepResultPayload,
 )
-from agent.dispatch.factory import create_adapter
+from worker_agent.dispatch.factory import create_adapter
 from agent.tools.registry import TOOL_REGISTRY, UnknownToolError
 
 log = structlog.get_logger()
@@ -173,7 +173,7 @@ def _install_signal_handlers(adapter: DispatchAdapter, worker: Worker) -> None:
 
 
 async def main() -> None:
-    from agentcore.logging_setup import configure_logging
+    from worker_agent.logging_setup import configure_logging
     configure_logging("agentcore-worker")
     log.info("worker starting", worker_id=WORKER_ID)
 

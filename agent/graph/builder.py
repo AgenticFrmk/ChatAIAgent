@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, END
 
 from agent.graph.state import AgentState
-from agent.graph.context import manage_context
+from agentcore.plugins import ContextManager
 from agent.nodes.extract_intent import extract_intent
 from agent.nodes.clarify import clarify
 from agent.nodes.check_plan_cache import check_plan_cache
@@ -12,12 +12,14 @@ from agent.nodes.observe import observe
 from agent.nodes.analysis_summary import analysis_summary
 from agent.nodes.propose_fix import propose_fix
 from agent.nodes.report import report
+from agent.nodes.chain_remediate import chain_remediate
 from agent.graph.routes import (
     route_intent,
     route_cache,
     route_hitl_step_review, route_analysis_summary, route_propose_fix,
 )
-from agentcore.registry.base import RegistryProvider
+import os
+from worker_agent.registry.base import RegistryProvider
 
 
 def _make_session_factory(db_url: str):
@@ -32,7 +34,7 @@ def build_graph(checkpointer=None, registry: RegistryProvider | None = None):
 
     builder = StateGraph(AgentState)
 
-    builder.add_node("manage_context",    manage_context)
+    builder.add_node("manage_context",    ContextManager(max_tokens=int(os.environ.get("CONTEXT_MAX_TOKENS", "8000"))))
     builder.add_node("extract_intent",    extract_intent)
     builder.add_node("clarify",           clarify)
     builder.add_node("check_plan_cache",  check_plan_cache)
@@ -43,6 +45,7 @@ def build_graph(checkpointer=None, registry: RegistryProvider | None = None):
     builder.add_node("analysis_summary",  analysis_summary)
     builder.add_node("propose_fix",       propose_fix)
     builder.add_node("report",            report)
+    builder.add_node("chain_remediate",   chain_remediate)
 
     builder.set_entry_point("manage_context")
     builder.add_edge("manage_context", "extract_intent")
@@ -70,9 +73,10 @@ def build_graph(checkpointer=None, registry: RegistryProvider | None = None):
     )
     builder.add_conditional_edges(
         "propose_fix", route_propose_fix,
-        {"think": "think", "propose_fix": "propose_fix", "end": END},
+        {"report": "report", "think": "think", "propose_fix": "propose_fix", "end": END},
     )
-    builder.add_edge("report", END)
+    builder.add_edge("report", "chain_remediate")
+    builder.add_edge("chain_remediate", END)
 
     return builder.compile(checkpointer=checkpointer)
 
