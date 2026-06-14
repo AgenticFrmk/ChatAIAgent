@@ -12,7 +12,7 @@ RUN npm ci --prefer-offline 2>/dev/null || npm install
 COPY ChatAIAgent/frontend/ .
 RUN npm run build
 
-# ── Stage 2: nginx — static files + reverse proxy to AgentGateway ────────────
+# ── Stage 2: nginx — static files + reverse proxy ────────────────────────────
 FROM nginx:alpine
 
 COPY --from=frontend-builder /build/dist /usr/share/nginx/html
@@ -22,7 +22,7 @@ EXPOSE 80
 
 # Substitute service URLs; nginx's own $host/$uri/etc. are left alone
 CMD ["/bin/sh", "-c", \
-  "envsubst '${AGENT_GATEWAY_URL} ${AUTH_SERVICE_URL} ${SLM_PLATFORM_URL} ${REGISTRY_SERVICE_URL}' \
+  "envsubst '${ENVOY_URL} ${AUTH_SERVICE_URL} ${SLM_PLATFORM_URL} ${REGISTRY_SERVICE_URL}' \
     < /etc/nginx/nginx.conf.template \
     > /etc/nginx/conf.d/default.conf \
   && nginx -g 'daemon off;'"]

@@ -9,7 +9,7 @@ import {
   formatObservation,
   formatReport,
 } from '../lib/formatter'
-import type { BudgetState, ChatMessage, EntityMap, HitlKind, ReportData, Tao } from '../lib/types'
+import type { BudgetState, ChatMessage, EntityMap, HitlKind, PlanStep, ReportData, Tao } from '../lib/types'
 
 export interface UseChatThreadReturn {
   messages:      ChatMessage[]
@@ -51,6 +51,7 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
   const autoApproveRef   = useRef(autoApprove)
   const thinkingIdRef    = useRef<string | null>(null)
   const executingIdRef   = useRef<string | null>(null)
+  const prevCompactedRef = useRef<boolean>(false)
   tokenRef.current       = token
   autoApproveRef.current = autoApprove
 
@@ -110,6 +111,17 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
   // ── handle ─────────────────────────────────────────────────────────────
   const handle = useCallback((type: string, data: Record<string, unknown>) => {
     switch (type) {
+      case 'plan_ready': {
+        const steps = data.steps as PlanStep[]
+        const needsApproval = data.needs_approval as boolean
+        const planMsg: ChatMessage = { ...make('agent', 'plan'), planSteps: steps }
+        const thId = thinkingIdRef.current
+        thinkingIdRef.current = null
+        setMessages(prev => thId ? prev.map(m => m.id === thId ? planMsg : m) : [...prev, planMsg])
+        if (needsApproval) setHitlKind('policy_review')
+        break
+      }
+
       case 'step_start':
         appendStepLine(`⏳ **${data.tool as string}** — running…`)
         break
@@ -172,6 +184,16 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
         const b = data as unknown as BudgetState
         setBudget(b)
         setBudgetHistory(prev => [...prev, { tokens: b.estimated_tokens, ts: Date.now() }])
+        if (b.compacted && !prevCompactedRef.current) {
+          setMessages(prev => [...prev, {
+            id: uid(),
+            role: 'agent',
+            kind: 'compaction',
+            timestamp: Date.now(),
+            messagesEvicted: b.messages_evicted,
+          }])
+        }
+        prevCompactedRef.current = b.compacted
         break
       }
 
@@ -254,6 +276,7 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     threadIdRef.current = null
     thinkingIdRef.current = null
     executingIdRef.current = null
+    prevCompactedRef.current = false
     lastSeenRef.current = 0
     setMessages([])
     setIsRunning(false)
@@ -272,6 +295,7 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     : hitlKind === 'step_review'      ? "Approve · Modify <feedback> · Reject"
     : hitlKind === 'analysis_summary' ? "Reply 'yes' to propose a fix, or 'no' to stop…"
     : hitlKind === 'propose_fix'      ? "Approve · Modify <feedback> · Reject"
+    : hitlKind === 'policy_review'    ? "Type 'approve' to proceed or 'reject' to cancel…"
     : 'Describe the incident…'
 
   return { messages, awaitingReply, placeholder, isRunning, budget, budgetHistory, send, reset, autoApprove, setAutoApprove }

@@ -1,14 +1,14 @@
 /**
- * Pact consumer tests: ChatAiAgent → AgentGateway
+ * Pact consumer tests: ChatAiAgent → sre-agent (via Envoy)
  *
- * Documents the HTTP contract the frontend expects from AgentGateway.
+ * Documents the HTTP contract the frontend expects from sre-agent / Envoy.
  * Mirrors the four functions in src/lib/gateway.ts:
- *   login()        → POST /auth/token
- *   invokeStream() → POST /invoke/stream
+ *   login()        → POST /auth/token   (AuthService via nginx, NOT Envoy)
+ *   invokeStream() → POST /graph/invoke/stream
  *   getEvents()    → GET  /events/{threadId}?from=N
  *   getHistory()   → GET  /history?limit=N
  *
- * Generates pacts/ChatAiAgent-AgentGateway.json.
+ * Generates pacts/ChatAiAgent-sre-agent.json.
  *
  * Run locally:  npm run test:pact
  * CI:           api-contracts.yml calls this; pact.json is published to Pactflow.
@@ -17,14 +17,14 @@ import path from "path"
 import { PactV3, MatchersV3 } from "@pact-foundation/pact"
 import { describe, it, expect } from "vitest"
 
-const { like, eachLike, string } = MatchersV3
+const { like, eachLike } = MatchersV3
 
 const MOCK_PORT = 9005
 const PACT_DIR = path.resolve(__dirname, "../../../pacts")
 
 const provider = new PactV3({
   consumer: "ChatAiAgent",
-  provider: "AgentGateway",
+  provider: "sre-agent",
   dir: PACT_DIR,
   port: MOCK_PORT,
 })
@@ -43,10 +43,11 @@ async function login(baseUrl: string, username: string, password: string): Promi
 }
 
 async function invokeStream(baseUrl: string, token: string, message: string): Promise<string> {
-  const res = await fetch(`${baseUrl}/invoke/stream`, {
+  const threadId = "thread-" + Math.random().toString(36).slice(2)
+  const res = await fetch(`${baseUrl}/graph/invoke/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ message, auto_approve: false }),
+    body: JSON.stringify({ message, thread_id: threadId, auth: {}, auto_approve: false }),
   })
   const json = (await res.json()) as { thread_id: string }
   return json.thread_id
@@ -79,7 +80,7 @@ async function getHistory(
 
 // ── tests ─────────────────────────────────────────────────────────────────────
 
-describe("ChatAiAgent → AgentGateway pact", () => {
+describe("ChatAiAgent → sre-agent pact", () => {
   it("login returns an access token", () =>
     provider.addInteraction({
       states: [{ description: "valid user credentials exist" }],
@@ -103,20 +104,20 @@ describe("ChatAiAgent → AgentGateway pact", () => {
 
   it("invokeStream returns a thread_id", () =>
     provider.addInteraction({
-      states: [{ description: "AgentGateway graph is ready" }],
+      states: [{ description: "sre-agent graph is ready" }],
       uponReceiving: "an invoke stream request",
       withRequest: {
         method: "POST",
-        path: "/invoke/stream",
+        path: "/graph/invoke/stream",
         headers: {
           "Content-Type": like("application/json"),
           Authorization: like("Bearer eyJ..."),
         },
-        body: { message: "hello", auto_approve: false },
+        body: { message: "hello", thread_id: like("thread-abc"), auth: like({}), auto_approve: false },
       },
       willRespondWith: {
-        status: 200,
-        body: { thread_id: like("t-abc123") },
+        status: 202,
+        body: { thread_id: like("thread-abc") },
       },
     }).executeTest(async (mockServer) => {
       const threadId = await invokeStream(mockServer.url, "eyJ...", "hello")
@@ -148,9 +149,9 @@ describe("ChatAiAgent → AgentGateway pact", () => {
       expect(typeof result.total).toBe("number")
     }))
 
-  it("getHistory returns a list of sessions", () =>
+  it("getHistory returns a list of plan history entries", () =>
     provider.addInteraction({
-      states: [{ description: "session history exists" }],
+      states: [{ description: "plan history exists" }],
       uponReceiving: "a get history request with limit 100",
       withRequest: {
         method: "GET",
@@ -160,7 +161,7 @@ describe("ChatAiAgent → AgentGateway pact", () => {
       },
       willRespondWith: {
         status: 200,
-        body: eachLike({ thread_id: like("t-1"), user_id: like("user-a") }),
+        body: eachLike({ plan_id: like("uuid"), domain: like("connectivity") }),
       },
     }).executeTest(async (mockServer) => {
       const history = await getHistory(mockServer.url, "eyJ...", 100)

@@ -1,10 +1,8 @@
 import type { PerfSummary } from '../../hooks/useAnalytics'
-import type { EvalContract } from '../../hooks/useEvalContract'
 import MetricTooltip from './MetricTooltip'
 
 interface Props {
   perf: PerfSummary | null
-  contract: EvalContract | null
 }
 
 function pct(v: number) {
@@ -49,7 +47,7 @@ function BarGauge({ value, threshold }: { value: number; threshold?: number }) {
   )
 }
 
-export default function AgentPerfPanel({ perf, contract }: Props) {
+export default function AgentPerfPanel({ perf }: Props) {
   if (!perf || perf.run_count === 0) {
     return (
       <div className="flex-1 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
@@ -71,23 +69,17 @@ export default function AgentPerfPanel({ perf, contract }: Props) {
       <div className="flex flex-col">
         <PerfRow
           label="Plan Accuracy"
-          value={
-            <BarGauge
-              value={perf.plan_accuracy}
-              threshold={contract?.min_plan_accuracy}
-            />
-          }
-          tooltip="% of runs where the agent's actual tool call sequence matched the expected sequence in the eval contract. Always 100% — eval contract wiring is not yet complete."
+          value={<BarGauge value={perf.plan_accuracy} />}
+          tooltip="% of runs where the agent executed its proposed plan without deviation. Reported by AgentCore at run completion — a run is marked accurate when the executed tool sequence matched what was proposed in the plan step."
         />
         <PerfRow
           label="Step Efficiency"
           value={
-            <span className={efficiencyColor(perf.step_efficiency, contract?.max_step_efficiency)}>
+            <span className={efficiencyColor(perf.step_efficiency)}>
               {perf.step_efficiency.toFixed(2)}×
             </span>
           }
-          sub={contract ? `max ${contract.max_step_efficiency}×` : undefined}
-          tooltip="actual_steps ÷ expected_steps from the eval contract. 1.0× is perfect — agent executed exactly the planned steps. Higher means extra steps were taken. Green ≤1.2×, amber up to contract max."
+          tooltip="actual_steps ÷ proposed_steps. 1.0× means the agent executed exactly the steps it planned. Higher means extra steps were taken. Green ≤1.2×, amber above that."
         />
         <PerfRow
           label="Avg Latency (total)"
@@ -97,18 +89,12 @@ export default function AgentPerfPanel({ perf, contract }: Props) {
         />
         <PerfRow
           label="Confidence Calibration"
-          value={
-            <BarGauge
-              value={perf.confidence_calibration}
-              threshold={contract?.min_confidence_calibration}
-            />
-          }
+          value={<BarGauge value={perf.confidence_calibration} />}
           tooltip="Of runs where the agent self-reported high confidence (mean > 0.8), what % actually resolved? Measures whether high confidence is warranted — 100% means every high-confidence run succeeded."
         />
         <PerfRow
           label="Avg Retry Rate"
           value={perf.retry_rate.toFixed(2)}
-          sub={contract ? `max ${contract.max_retry_rate}` : undefined}
           tooltip="Average number of tool call retries per run. A retry fires when a tool fails and is re-attempted. Lower is better — high retry rates indicate flaky tools or unstable infrastructure."
         />
       </div>

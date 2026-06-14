@@ -34,7 +34,18 @@ export interface BudgetState {
 // All content is plain text (markdown). No special card types.
 
 export type MessageRole = 'user' | 'agent'
-export type MessageKind = 'text' | 'thinking' | 'error'
+export type MessageKind = 'text' | 'thinking' | 'error' | 'compaction' | 'plan'
+
+export type PolicyDecision = 'allow' | 'block' | 'require_approval'
+
+export interface PlanStep {
+  step_number: number
+  tool_name: string
+  inputs: Record<string, unknown>
+  reason: string
+  policy?: PolicyDecision
+  policy_rule?: string
+}
 
 export interface ChatMessage {
   id: string
@@ -42,6 +53,8 @@ export interface ChatMessage {
   kind: MessageKind
   timestamp: number
   text?: string
+  messagesEvicted?: number
+  planSteps?: PlanStep[]
 }
 
 export type AgentPhase =
@@ -53,4 +66,11 @@ export type AgentPhase =
   | 'complete'
   | 'error'
 
-export type HitlKind = 'entity' | 'clarification' | 'step_review' | 'analysis_summary' | 'propose_fix' | null
+export type HitlKind =
+  | 'entity'
+  | 'clarification'
+  | 'step_review'
+  | 'analysis_summary'
+  | 'propose_fix'
+  | 'policy_review'
+  | null

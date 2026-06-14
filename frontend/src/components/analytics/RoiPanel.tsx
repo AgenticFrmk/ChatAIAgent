@@ -1,10 +1,8 @@
 import type { RoiSummary } from '../../hooks/useAnalytics'
-import type { EvalContract } from '../../hooks/useEvalContract'
 import MetricTooltip from './MetricTooltip'
 
 interface Props {
   roi: RoiSummary | null
-  contract: EvalContract | null
 }
 
 function fmt(seconds: number) {
@@ -42,7 +40,7 @@ function MetricCard({ label, value, sub, tooltip }: { label: string; value: Reac
   )
 }
 
-export default function RoiPanel({ roi, contract }: Props) {
+export default function RoiPanel({ roi }: Props) {
   if (!roi || roi.run_count === 0) {
     return (
       <div className="flex-1 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
@@ -52,10 +50,7 @@ export default function RoiPanel({ roi, contract }: Props) {
     )
   }
 
-  const falseActColor =
-    contract && roi.false_action_rate > contract.false_action_threshold
-      ? 'text-red-500'
-      : 'text-gray-900'
+  const falseActColor = roi.false_action_rate > 0 ? 'text-red-500' : 'text-gray-900'
 
   return (
     <div className="flex-1 bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
@@ -72,7 +67,7 @@ export default function RoiPanel({ roi, contract }: Props) {
               <DeltaBadge delta={roi.mttr_delta_pct} />
             </>
           }
-          sub={contract ? `baseline ${fmt(contract.mttr_baseline_seconds)}` : undefined}
+          sub={`${roi.mttr_delta_pct > 0 ? '↑' : '↓'} ${Math.abs(roi.mttr_delta_pct).toFixed(1)}% vs human baseline`}
           tooltip="Mean Time To Resolve — wall-clock time from run start to finish. Delta % compares against the human baseline. Green ↓ means the agent is faster than a human would be."
         />
         <MetricCard
@@ -90,8 +85,7 @@ export default function RoiPanel({ roi, contract }: Props) {
         <MetricCard
           label="False Action Rate"
           value={<span className={falseActColor}>{pct(roi.false_action_rate)}</span>}
-          sub={contract ? `threshold ${pct(contract.false_action_threshold)}` : undefined}
-          tooltip="% of runs where the agent's remediation worsened the alert state. Always 0 — post-execution alert state comparison is not yet implemented."
+          tooltip="% of runs where the agent's remediation worsened the alert state — outcome reported as 'false_action' by AgentCore. Requires post-execution alert state comparison to be wired in AgentCore."
         />
       </div>
     </div>

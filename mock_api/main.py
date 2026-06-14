@@ -21,10 +21,21 @@ Endpoints (NCM API v2 paths):
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, Path, Query
+import os
+
+from fastapi import FastAPI, HTTPException, Path, Query, Security, status
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
+_NCM_API_KEY = os.environ.get("NCM_API_KEY", "mock-ncm-dev-key")
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
 app = FastAPI(title="CradlepointNCMMockAPI", version="2.0.0")
+
+
+def _require_api_key(key: str | None = Security(_api_key_header)) -> None:
+    if key != _NCM_API_KEY:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing X-API-Key")
 
 
 # ── Request bodies ────────────────────────────────────────────────────────────
@@ -185,7 +196,7 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/ncm/api/v2/routers/")
+@app.get("/ncm/api/v2/routers/", dependencies=[Security(_require_api_key)])
 def get_router_list(
     state_filter: str = Query(default="", description="Optional state filter"),
 ) -> dict:
@@ -195,7 +206,7 @@ def get_router_list(
     return _ROUTER_LIST
 
 
-@app.get("/ncm/api/v2/routers/{router_id}/")
+@app.get("/ncm/api/v2/routers/{router_id}/", dependencies=[Security(_require_api_key)])
 def get_router_status(
     router_id: str = Path(...),
     scenario: str = Query(default="fault", description="fault | success"),
@@ -204,7 +215,7 @@ def get_router_status(
     return {"router_id": router_id, "name": "BRANCH-BOSTON-R01", **status}
 
 
-@app.get("/ncm/api/v2/net_device_signal_samples/")
+@app.get("/ncm/api/v2/net_device_signal_samples/", dependencies=[Security(_require_api_key)])
 def get_wan_telemetry(
     router_id: str = Query(default="550e8400-0001"),
     scenario: str = Query(default="fault", description="fault | success"),
@@ -212,7 +223,7 @@ def get_wan_telemetry(
     return _WAN_TELEMETRY_OK if scenario == "success" else _WAN_TELEMETRY_FAULT
 
 
-@app.get("/ncm/api/v2/router_alerts/")
+@app.get("/ncm/api/v2/router_alerts/", dependencies=[Security(_require_api_key)])
 def get_tunnel_status(
     router_id: str = Query(default="550e8400-0001"),
     scenario: str = Query(default="fault", description="fault | success"),
@@ -220,7 +231,7 @@ def get_tunnel_status(
     return _TUNNEL_STATUS_OK if scenario == "success" else _TUNNEL_STATUS_FAULT
 
 
-@app.post("/ncm/api/v2/reboot_activity/")
+@app.post("/ncm/api/v2/reboot_activity/", dependencies=[Security(_require_api_key)])
 def reset_modem(body: RebootActivityRequest) -> dict:
     router_id = body.router.rstrip("/").split("/")[-1]
     return {
@@ -232,7 +243,7 @@ def reset_modem(body: RebootActivityRequest) -> dict:
     }
 
 
-@app.patch("/ncm/api/v2/configuration_managers/{router_id}/")
+@app.patch("/ncm/api/v2/configuration_managers/{router_id}/", dependencies=[Security(_require_api_key)])
 def apply_mtu_fix(
     router_id: str = Path(...),
     body: MtuFixRequest = MtuFixRequest(),

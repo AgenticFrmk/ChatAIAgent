@@ -1,7 +1,6 @@
 import { useState, useMemo } from 'react'
 import { BarChart2 } from 'lucide-react'
 import { useAnalytics, type TimeRange } from '../hooks/useAnalytics'
-import { useEvalContract } from '../hooks/useEvalContract'
 import { useSession } from '../hooks/useSession'
 import RoiPanel from '../components/analytics/RoiPanel'
 import AgentPerfPanel from '../components/analytics/AgentPerfPanel'
@@ -26,7 +25,6 @@ export default function AnalyticsPage() {
   const range             = useMemo(() => makeRange(rangeDays), [rangeDays])
   const { session }       = useSession()
   const { roi, perf, runs, loading, error } = useAnalytics('chat-ai-agent', range, session?.token ?? null)
-  const contract = useEvalContract('connectivity')
 
   return (
     <>
@@ -77,8 +75,8 @@ export default function AnalyticsPage() {
         {!loading && (
           <>
             <div className="flex gap-4 flex-wrap">
-              <RoiPanel roi={roi} contract={contract} />
-              <AgentPerfPanel perf={perf} contract={contract} />
+              <RoiPanel roi={roi} />
+              <AgentPerfPanel perf={perf} />
             </div>
             <RunHistoryTable runs={runs} onSelect={setSelectedRunId} />
           </>
