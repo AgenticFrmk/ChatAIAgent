@@ -1,6 +1,6 @@
-// ── AgentGateway client ───────────────────────────────────────────────────
-// Same endpoints as SREDemo. VITE_GATEWAY_URL defaults to '/gateway' for
-// nginx reverse-proxy (or set to http://localhost:8000 for local dev without nginx).
+// ── Envoy sidecar client ──────────────────────────────────────────────────
+// VITE_GATEWAY_URL defaults to '/gateway' (nginx → Envoy proxy).
+// For local dev without nginx: set to http://localhost:10000.
 
 const GATEWAY_URL = (import.meta.env.VITE_GATEWAY_URL as string | undefined) ?? '/gateway'
 

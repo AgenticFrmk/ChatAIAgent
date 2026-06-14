@@ -8,11 +8,9 @@ export interface MappedEvent {
 /**
  * Translates raw AgentBE events into semantic ChatAIAgent events.
  *
- * AgentBE emits two shapes:
+ * sre-agent emits two shapes:
  *   • Node events  — {node, event: "on_chain_start"|"on_chain_end", data: {output: {...}}}
  *   • Control      — {type: "interrupt"|"done"|"error"|"usage", ...}
- *
- * AgentGateway rewrites "usage" → "budget" before the frontend sees it.
  */
 export function mapGatewayEvent(ev: GatewayEvent): MappedEvent[] {
   // ── Control events ────────────────────────────────────────────────────────

@@ -84,23 +84,6 @@ services:
     networks:
       - agentic
 
-  # ── Gateway DB (sessions) ────────────────────────────────────────────────────
-  postgres-gateway:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: agent_gateway
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${GATEWAY_DB_PASSWORD:-postgres}
-    volumes:
-      - postgres_gateway_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d agent_gateway"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    networks:
-      - agentic
-
   # ── AgentCore DB (LangGraph checkpoints, plan history) ───────────────────────
   postgres-agentcore:
     image: postgres:16-alpine
@@ -180,11 +163,11 @@ services:
     networks:
       - agentic
 
-  # ── AgentBE (AgentCore + LangGraph runtime) ───────────────────────────────────
-  agentbe:
+  # ── SRE Agent (LangGraph runtime, replaces AgentBE) ──────────────────────────
+  sre-agent:
     build:
       context: ../
-      dockerfile: AgentBE/Dockerfile
+      dockerfile: ChatAIAgent/agent/Dockerfile
     depends_on:
       postgres-agentcore:
         condition: service_healthy
@@ -197,7 +180,6 @@ services:
     environment:
       CHECKPOINTER_URL: postgresql://postgres:${AGENTCORE_DB_PASSWORD:-postgres}@postgres-agentcore:5432/agentcore
       REDIS_URL: redis://redis:6379/0
-      JWKS_URL: http://auth-service:9000/.well-known/jwks.json
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
       LLM_MODEL: ${AGENT_LLM_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
@@ -207,8 +189,12 @@ services:
       REGISTRY_USERNAME: ${SEED_USERNAME:-sre-seed@example.com}
       REGISTRY_PASSWORD: ${SEED_PASSWORD:-changeme}
       SLM_PLATFORM_URL: http://slm-platform:8080
-      AGENT_ID: ${AGENT_ID:-chat-ai-agent}
+      AGENT_ID: ${AGENT_ID:-sre-agent}
       USE_SYNTHETIC_DATA: ${USE_SYNTHETIC_DATA:-true}
+      PORT: 8080
+      CONTEXT_MAX_TOKENS: ${CONTEXT_MAX_TOKENS:-8000}
+      OPA_URL: ${OPA_URL:-http://opa:8181}
+      POLICY_SERVICE_URL: ${POLICY_SERVICE_URL:-http://policy-service:8090}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
@@ -219,33 +205,104 @@ services:
       PD_ROUTING_KEY: ${PD_ROUTING_KEY:-}
       PD_FROM_EMAIL: ${PD_FROM_EMAIL:-}
       PD_SERVICE_ID: ${PD_SERVICE_ID:-}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     networks:
       - agentic
 
-  # ── AgentGateway ──────────────────────────────────────────────────────────────
-  agent-gateway:
+  # ── PolicyService — session + safety validator (shared microservice) ─────────
+  policy-service:
     build:
-      context: ../
-      dockerfile: AgentGateway/Dockerfile
+      context: ../PolicyService
     depends_on:
-      postgres-gateway:
-        condition: service_healthy
-      auth-service:
-        condition: service_started
-      agentbe:
-        condition: service_started
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:${GATEWAY_DB_PASSWORD:-postgres}@postgres-gateway:5432/agent_gateway
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
-      JWKS_URL: http://auth-service:9000/.well-known/jwks.json
-      AGENT_BE_URL: http://agentbe:8001
       REDIS_URL: redis://redis:6379/0
-      CORS_ORIGINS: http://localhost,http://localhost:3001,${EXTRA_CORS_ORIGINS:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      REGISTRY_URL: http://registry-service:8001
-      AUTH_SERVICE_TOKEN_URL: http://auth-service:9000/auth/token
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GUARDRAILS_API_KEY: ${GUARDRAILS_API_KEY:-}
+      SAFETY_TIMEOUT_S: ${SAFETY_TIMEOUT_S:-2}
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - agentic
+
+  # ── OPA — Policy Decision Point (ext_authz gRPC for Envoy) ──────────────────
+  # amd64-only image; runs under Rosetta on Apple Silicon.
+  # No healthcheck: the image has no shell or wget (distroless). OPA starts
+  # in <1s so Envoy's restart: on-failure handles the rare startup race.
+  opa:
+    platform: linux/amd64
+    build:
+      context: ../sidecar/opa
+      dockerfile: Dockerfile
+    command:
+      - run
+      - --server
+      - --config-file=/config.yaml
+      - --addr=0.0.0.0:8181
+      - --log-level=info
+      - /rego
+      - /data
+    environment:
+      POLICY_SERVICE_URL: http://policy-service:8090
+    depends_on:
+      policy-service:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - agentic
+
+  # ── ratelimit — Envoy global rate limit backend (Redis-backed, per-user quotas) ─
+  ratelimit:
+    image: envoyproxy/ratelimit:master
+    environment:
+      LOG_LEVEL: warn
+      REDIS_SOCKET_TYPE: tcp
+      REDIS_URL: redis:6379
+      USE_STATSD: "false"
+      RUNTIME_ROOT: /data
+      RUNTIME_SUBDIRECTORY: ratelimit
+      RUNTIME_WATCH_ROOT: "false"
+      RUNTIME_IGNOREDOTFILES: "true"
+    volumes:
+      - ../sidecar/ratelimit:/data/ratelimit/config:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - agentic
+
+  # ── Envoy — sidecar proxy (JWT authn + rate limiting + OPA ext_authz) ─────────
+  envoy:
+    image: envoyproxy/envoy:v1.31-latest
+    volumes:
+      - ../sidecar/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+    command: ["/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
+    ports:
+      - "10000:10000"
+    depends_on:
+      auth-service:
+        condition: service_started
+      opa:
+        condition: service_started
+      ratelimit:
+        condition: service_started
+      policy-service:
+        condition: service_healthy
+      sre-agent:
+        condition: service_healthy
+    restart: on-failure
     networks:
       - agentic
 
@@ -311,11 +368,11 @@ services:
       context: ../
       dockerfile: ChatAIAgent/Dockerfile
     depends_on:
-      - agent-gateway
+      - envoy
       - kb-seeder
       - slm-platform
     environment:
-      AGENT_GATEWAY_URL: http://agent-gateway:8000
+      ENVOY_URL: http://envoy:10000
       AUTH_SERVICE_URL: http://auth-service:9000
       SLM_PLATFORM_URL: http://slm-platform:8080
       REGISTRY_SERVICE_URL: http://registry-service:8001
@@ -337,7 +394,6 @@ networks:
 volumes:
   postgres_auth_data:
   postgres_registry_data:
-  postgres_gateway_data:
   postgres_agentcore_data:
   postgres_slm_data:
   rsa_keys:
