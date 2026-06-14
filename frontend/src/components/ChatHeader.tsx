@@ -1,4 +1,4 @@
-import { Terminal, LogOut, RotateCcw, BarChart2, BookOpen, Info, DollarSign, Zap } from 'lucide-react'
+import { Terminal, LogOut, RotateCcw, BarChart2, BookOpen, Info, DollarSign, Zap, Shield } from 'lucide-react'
 import BudgetGauge from './BudgetGauge'
 import type { BudgetState } from '../lib/types'
 
@@ -36,7 +36,7 @@ export default function ChatHeader({ username, isRunning, awaitingReply, hasMess
           <Terminal className="w-3.5 h-3.5 text-white" />
         </div>
         <span className="text-sm font-bold text-gray-900">
-          ChatAI Agent
+          SRE Agent
           <span className="text-gray-600 font-normal text-xs ml-1.5">by AgentCore</span>
         </span>
       </div>
@@ -79,6 +79,14 @@ export default function ChatHeader({ username, isRunning, awaitingReply, hasMess
             <RotateCcw className="w-4 h-4" />
           </button>
         )}
+
+        <button
+          onClick={() => window.open('/demo', '_blank')}
+          title="Agent Policy Control — Envoy + OPA"
+          className="p-2 rounded-lg text-gray-600 hover:text-violet-600 hover:bg-gray-100 transition-colors"
+        >
+          <Shield className="w-4 h-4" />
+        </button>
 
         <button
           onClick={() => window.open('/analytics', '_blank')}

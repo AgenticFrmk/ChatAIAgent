@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncpg
 
-from agent.dispatch.base import (
+from worker_agent.dispatch.base import (
     DispatchAdapter,
     LeaseExpiredError,
     StepMessage,

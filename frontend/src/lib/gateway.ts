@@ -62,9 +62,10 @@ export async function login(username: string, password: string): Promise<string>
 }
 
 export async function invokeStream(message: string, token: string, autoApprove = false): Promise<string> {
+  const thread_id = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
   const data = await _request<{ thread_id: string }>(
-    '/invoke/stream',
-    { method: 'POST', body: JSON.stringify({ message, auto_approve: autoApprove }) },
+    '/graph/invoke/stream',
+    { method: 'POST', body: JSON.stringify({ message, thread_id, auto_approve: autoApprove }) },
     token,
   )
   return data.thread_id
@@ -72,7 +73,7 @@ export async function invokeStream(message: string, token: string, autoApprove =
 
 export async function resumeStream(threadId: string, response: string, token: string, autoApprove = false): Promise<void> {
   await _request(
-    '/resume/stream',
+    '/graph/resume/stream',
     { method: 'POST', body: JSON.stringify({ thread_id: threadId, response, auto_approve: autoApprove }) },
     token,
   )

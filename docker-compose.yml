@@ -142,6 +142,51 @@ services:
     networks:
       - agentic
 
+  # ── Consul — service registry (AgentControlPlane control plane) ──────────────
+  # Agents register themselves on startup; AgentControlPlane polls the catalog
+  # and writes dynamic Envoy CDS config to the shared envoy_dynamic volume.
+  consul:
+    image: hashicorp/consul:1.19
+    command: "agent -dev -client=0.0.0.0 -bind=0.0.0.0 -ui"
+    ports:
+      - "8500:8500"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8500/v1/status/leader || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - agentic
+
+  # ── AgentControlPlane — Consul→Envoy CDS bridge ───────────────────────────────
+  # Watches Consul catalog for healthy agent services and writes
+  # /etc/envoy-dynamic/cds.yaml (via atomic rename). Envoy hot-reloads
+  # clusters on inotify without restart.
+  agent-control-plane:
+    build:
+      context: ../AgentControlPlane
+    environment:
+      CONSUL_URL: http://consul:8500
+      OPA_HTTP_URL: http://opa:8181
+      CDS_PATH: /etc/envoy-dynamic/cds.yaml
+      POLL_INTERVAL: "5"
+    volumes:
+      - ../AgentSidecar/envoy/dynamic:/etc/envoy-dynamic
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      consul:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8088/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    ports:
+      - "8088:8088"
+    networks:
+      - agentic
+
   # ── Jaeger (distributed tracing UI + OTLP collector) ─────────────────────────
   jaeger:
     image: jaegertracing/all-in-one:1.57
@@ -163,11 +208,42 @@ services:
     networks:
       - agentic
 
+  # ── Remediation Agent — destructive-ops planner (demo chain target) ──────────
+  # Receives analysis findings from sre-agent and generates a remediation plan
+  # that includes DESTRUCTIVE operations (kubectl delete, scale to 0, drain).
+  # Called exclusively by sre-agent via Envoy; direct user access is OPA-denied.
+  # Built from the same Dockerfile as sre-agent (target: remediation-agent stage).
+  remediation-agent:
+    build:
+      context: ../
+      dockerfile: ChatAIAgent/agent/Dockerfile
+      target: remediation-agent
+    labels:
+      - "SERVICE_NAME=remediation-agent"
+      - "SERVICE_PORT=8085"
+      - "SERVICE_TAGS=agent-type:remediation,chain-target:true,opa-gated:true"
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      LLM_MODEL: ${REMEDIATION_LLM_MODEL:-claude-haiku-4-5-20251001}
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/health')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    networks:
+      - agentic
+
   # ── SRE Agent (LangGraph runtime, replaces AgentBE) ──────────────────────────
   sre-agent:
     build:
       context: ../
       dockerfile: ChatAIAgent/agent/Dockerfile
+      target: sre-agent
+    labels:
+      - "SERVICE_NAME=sre-agent"
+      - "SERVICE_PORT=8080"
+      - "SERVICE_TAGS=agent-type:sre,entry-point:true"
     depends_on:
       postgres-agentcore:
         condition: service_healthy
@@ -184,7 +260,9 @@ services:
       LLM_MODEL: ${AGENT_LLM_MODEL:-claude-sonnet-4-6}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       REGISTRY_SERVICE_URL: http://registry-service:8001
-      REGISTRY_CACHE_TTL_SECONDS: ${REGISTRY_CACHE_TTL_SECONDS:-60}
+      REGISTRY_CACHE_TTL_SECONDS: ${REGISTRY_CACHE_TTL_SECONDS:-86400}
+      RAG_CACHE_TTL_SECONDS: ${RAG_CACHE_TTL_SECONDS:-86400}
+      TOOL_CACHE_TTL_SECONDS: ${TOOL_CACHE_TTL_SECONDS:-3600}
       REGISTRY_AUTH_URL: http://auth-service:9000
       REGISTRY_USERNAME: ${SEED_USERNAME:-sre-seed@example.com}
       REGISTRY_PASSWORD: ${SEED_PASSWORD:-changeme}
@@ -195,6 +273,8 @@ services:
       CONTEXT_MAX_TOKENS: ${CONTEXT_MAX_TOKENS:-8000}
       OPA_URL: ${OPA_URL:-http://opa:8181}
       POLICY_SERVICE_URL: ${POLICY_SERVICE_URL:-http://policy-service:8090}
+      ENVOY_URL: http://envoy:10000
+      AUTH_SERVICE_URL: http://auth-service:9000
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
       AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-us-east-1}
@@ -288,6 +368,7 @@ services:
     image: envoyproxy/envoy:v1.31-latest
     volumes:
       - ../AgentSidecar/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ../AgentSidecar/envoy/dynamic:/etc/envoy-dynamic:ro
     command: ["/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
     ports:
       - "10000:10000"
@@ -301,6 +382,10 @@ services:
       policy-service:
         condition: service_healthy
       sre-agent:
+        condition: service_healthy
+      remediation-agent:
+        condition: service_healthy
+      agent-control-plane:
         condition: service_healthy
     restart: on-failure
     networks:
@@ -376,6 +461,8 @@ services:
       AUTH_SERVICE_URL: http://auth-service:9000
       SLM_PLATFORM_URL: http://slm-platform:8080
       REGISTRY_SERVICE_URL: http://registry-service:8001
+      AGENT_CONTROL_PLANE_URL: http://agent-control-plane:8088
+      SRE_AGENT_URL: http://sre-agent:8080
     ports:
       - "3001:80"
     healthcheck:

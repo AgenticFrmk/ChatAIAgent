@@ -8,9 +8,10 @@ interface Props {
   messages: ChatMessageType[]
   isRunning: boolean
   awaitingReply: boolean
+  thinkingLabel?: string | null
 }
 
-export default function ChatThread({ messages, isRunning, awaitingReply }: Props) {
+export default function ChatThread({ messages, isRunning, awaitingReply, thinkingLabel }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -48,7 +49,7 @@ export default function ChatThread({ messages, isRunning, awaitingReply }: Props
           }
           return <ChatMessage key={msg.id} msg={msg} />
         })}
-        {showThinking && <ThinkingBubble />}
+        {showThinking && <ThinkingBubble label={thinkingLabel ?? undefined} />}
         <div ref={bottomRef} />
       </div>
     </div>

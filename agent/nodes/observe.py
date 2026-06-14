@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from agent.graph.state import AgentState
-from agentcore.llm.config import LLMConfig
+from worker_agent.llm import LLMConfig
 
 log = structlog.get_logger()
 

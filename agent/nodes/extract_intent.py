@@ -9,8 +9,8 @@ from pathlib import Path
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import ValidationError
-from agentcore.llm.config import LLMConfig
-from agentcore.registry.base import RegistryProvider, DomainRecord
+from worker_agent.llm import LLMConfig
+from worker_agent.registry.base import RegistryProvider, DomainRecord
 from agent.schemas.intent import Intent
 from agent.graph.state import AgentState
 
@@ -131,7 +131,7 @@ async def extract_intent(state: AgentState, config: RunnableConfig) -> dict:
         human_msgs.pop()
     messages = [SystemMessage(content=system_prompt)] + human_msgs
 
-    from agentcore.observability.metrics import get_collector
+    from agentcore.plugins import get_collector
     collector = get_collector(config)
     if collector:
         collector.record_phase_start("intent")

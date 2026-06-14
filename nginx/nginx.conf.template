@@ -43,6 +43,33 @@ server {
         proxy_read_timeout 120s;
     }
 
+    # ── Remediation result poll — direct to sre-agent, no JWT required ─────────
+    # Read-only Redis poll; no privileged operation. Bypasses Envoy so the
+    # /remediation page works without the user being logged in on the same window.
+    location = /sre-result {
+        set $sre "${SRE_AGENT_URL}";
+        proxy_pass $sre/remediation-result;
+        proxy_set_header Host $proxy_host;
+        proxy_read_timeout 5s;
+    }
+
+    location = /sre-result/clear {
+        set $sre "${SRE_AGENT_URL}";
+        proxy_method DELETE;
+        proxy_pass $sre/remediation-result;
+        proxy_set_header Host $proxy_host;
+        proxy_read_timeout 5s;
+    }
+
+    # ── AgentControlPlane — live policy control API ──────────────────────────
+    location /control/ {
+        set $acp "${AGENT_CONTROL_PLANE_URL}";
+        rewrite ^/control(/.*)$ $1 break;
+        proxy_pass $acp;
+        proxy_set_header Host $proxy_host;
+        proxy_read_timeout 10s;
+    }
+
     # ── Analytics proxy — SLMPlatform metrics ────────────────────────────────
     # /api/agent-perf/* → slm-platform:8080/agent-perf/*
     location /api/agent-perf/ {

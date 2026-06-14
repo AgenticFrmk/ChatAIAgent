@@ -32,3 +32,6 @@ class AgentState(TypedDict):
     # ── Policy ────────────────────────────────────────────────────────────────
     policy_decision: str | None   # 'allow' | 'block' | 'require_approval' | None
     policy_step: dict | None      # step payload emitted to policy_review interrupt
+
+    # ── Agent chaining ────────────────────────────────────────────────────────
+    remediation_response: dict | None   # result from chain_remediate node (OBO → remediation-agent)

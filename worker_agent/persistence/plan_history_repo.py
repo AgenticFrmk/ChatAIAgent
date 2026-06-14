@@ -10,7 +10,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.persistence.models import PlanHistory
+from worker_agent.persistence.models import PlanHistory
 
 log = structlog.get_logger()
 

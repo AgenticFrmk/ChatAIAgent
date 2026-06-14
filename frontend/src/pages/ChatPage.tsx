@@ -11,7 +11,7 @@ import CompactionBanner from '../components/CompactionBanner'
 export default function ChatPage() {
   const navigate = useNavigate()
   const { session, clearSession } = useSession()
-  const { messages, awaitingReply, placeholder, isRunning, budget, budgetHistory, send, reset, autoApprove, setAutoApprove } = useChatThread(
+  const { messages, awaitingReply, placeholder, isRunning, chainLabel, budget, budgetHistory, send, reset, autoApprove, setAutoApprove } = useChatThread(
     session?.token ?? null,
   )
 
@@ -68,7 +68,7 @@ export default function ChatPage() {
       <WarningBanner budgetUsed={budget?.budget_used ?? 0} />
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        <ChatThread messages={messages} isRunning={isRunning} awaitingReply={awaitingReply} />
+        <ChatThread messages={messages} isRunning={isRunning} awaitingReply={awaitingReply} thinkingLabel={chainLabel} />
         <ChatInputBar
           onSend={send}
           disabled={isRunning && !awaitingReply}

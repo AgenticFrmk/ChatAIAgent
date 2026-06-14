@@ -5,8 +5,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agent.dispatch.base import StepResultPayload
-from agent.persistence.models import Plan, Step, StepResult
+from worker_agent.dispatch.base import StepResultPayload
+from worker_agent.persistence.models import Plan, Step, StepResult
 
 
 async def get_plan(session: AsyncSession, plan_id: UUID) -> Plan | None:

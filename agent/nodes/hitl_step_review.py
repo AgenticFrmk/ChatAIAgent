@@ -3,7 +3,7 @@ from __future__ import annotations
 import structlog
 from langgraph.types import interrupt
 from agent.graph.state import AgentState
-from agentcore.observability.metrics import get_collector
+from agentcore.plugins import get_collector
 
 log = structlog.get_logger()
 

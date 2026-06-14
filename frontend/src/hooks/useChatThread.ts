@@ -16,6 +16,7 @@ export interface UseChatThreadReturn {
   awaitingReply: boolean
   placeholder:   string
   isRunning:     boolean
+  chainLabel:    string | null
   budget:        BudgetState | null
   budgetHistory: { tokens: number; ts: number }[]
   send:          (text: string) => Promise<void>
@@ -52,6 +53,11 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
   const thinkingIdRef    = useRef<string | null>(null)
   const executingIdRef   = useRef<string | null>(null)
   const prevCompactedRef = useRef<boolean>(false)
+  const chainActiveRef   = useRef(false)
+  const pendingReportRef = useRef<ReportData | null>(null)
+  const chainOpaRef      = useRef<string>('UNKNOWN')
+
+  const [chainLabel, setChainLabel] = useState<string | null>(null)
   tokenRef.current       = token
   autoApproveRef.current = autoApprove
 
@@ -167,14 +173,23 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
         break
       }
 
+      case 'chain_result':
+        chainOpaRef.current = (data.opa_decision as string) ?? 'UNKNOWN'
+        break
+
       case 'report':
         executingIdRef.current = null
-        replaceThinking(formatReport(data as unknown as ReportData))
-        setIsRunning(false)
+        // Hold report text until chain completes — show dispatch indicator first
+        pendingReportRef.current = data as unknown as ReportData
+        chainActiveRef.current = true
+        chainOpaRef.current = 'UNKNOWN'
+        setChainLabel('Dispatching to remediation-agent via OBO chain…')
         setHitlKind(null)
         break
 
       case 'error':
+        chainActiveRef.current = false
+        setChainLabel(null)
         replaceThinking((data.message as string) ?? 'An error occurred.', 'error')
         setIsRunning(false)
         setHitlKind(null)
@@ -198,6 +213,22 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
       }
 
       case 'done':
+        if (chainActiveRef.current) {
+          chainActiveRef.current = false
+          setChainLabel(null)
+          const pending = pendingReportRef.current
+          pendingReportRef.current = null
+          const opaDecision = chainOpaRef.current
+          const chainMsg = opaDecision === 'ALLOW'
+            ? '✓ Remediation plan dispatched — [view results →](/remediation)'
+            : `⛔ Remediation blocked by OPA (${opaDecision}) — [view policy details →](/remediation)`
+          setMessages(prev => {
+            const next = [...prev]
+            if (pending) next.push(make('agent', 'text', formatReport(pending, opaDecision)))
+            next.push(make('agent', opaDecision === 'ALLOW' ? 'text' : 'error', chainMsg))
+            return next
+          })
+        }
         setIsRunning(false)
         break
     }
@@ -209,6 +240,8 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     const ctrl = new AbortController()
     abortRef.current = ctrl
     lastSeenRef.current = 0
+    let lastProgressAt = Date.now()
+    const STALE_TIMEOUT_MS = 60_000
 
     const tick = async () => {
       if (ctrl.signal.aborted) return
@@ -220,7 +253,14 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
             handle(mapped.name, mapped.data)
           }
         }
-        if (events.length > 0) lastSeenRef.current += events.length
+        if (events.length > 0) {
+          lastSeenRef.current += events.length
+          lastProgressAt = Date.now()
+        } else if (Date.now() - lastProgressAt > STALE_TIMEOUT_MS) {
+          ctrl.abort()
+          handle('error', { message: 'Agent stream timed out — start a new chat to retry.' })
+          return
+        }
       } catch (err) {
         if ((err as Error).name === 'AbortError') return
       }
@@ -277,10 +317,14 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     thinkingIdRef.current = null
     executingIdRef.current = null
     prevCompactedRef.current = false
+    chainActiveRef.current = false
+    pendingReportRef.current = null
+    chainOpaRef.current = 'UNKNOWN'
     lastSeenRef.current = 0
     setMessages([])
     setIsRunning(false)
     setHitlKind(null)
+    setChainLabel(null)
     setBudget(null)
     setBudgetHistory([])
   }, [])
@@ -298,5 +342,5 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     : hitlKind === 'policy_review'    ? "Type 'approve' to proceed or 'reject' to cancel…"
     : 'Describe the incident…'
 
-  return { messages, awaitingReply, placeholder, isRunning, budget, budgetHistory, send, reset, autoApprove, setAutoApprove }
+  return { messages, awaitingReply, placeholder, isRunning, chainLabel, budget, budgetHistory, send, reset, autoApprove, setAutoApprove }
 }

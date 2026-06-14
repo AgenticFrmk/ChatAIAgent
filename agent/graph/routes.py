@@ -51,7 +51,6 @@ def route_propose_fix(state: AgentState) -> str:
     if feedback:
         return "propose_fix"
     if response in _REJECTIONS:
-        # propose_fix sets plan_cache_hit=False (explicit False, not None) on cache rejection
-        # so the SRE can start full analysis. None means it was never a cache hit → end.
         return "think" if state.get("plan_cache_hit") is False else "end"
-    return "think"
+    # Approved — skip local remediation execution; chain to remediation-agent via report
+    return "report"

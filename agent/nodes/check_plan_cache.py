@@ -40,7 +40,7 @@ async def check_plan_cache(state: AgentState, config: RunnableConfig) -> dict:
     tenant_id: str | None = cfg.get("tenant_id")
 
     try:
-        from agent.persistence.plan_history_repo import get_best_cached
+        from worker_agent.persistence.plan_history_repo import get_best_cached
 
         async with session_factory() as session:
             row = await get_best_cached(

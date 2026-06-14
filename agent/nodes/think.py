@@ -5,10 +5,10 @@ from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
 
 from agent.graph.state import AgentState
-from agentcore.llm.config import LLMConfig
-from agentcore.observability.ragas import get_ragas_collector
-from agentcore.registry.base import Playbook, RegistryProvider, ToolContract
-from agentcore.schemas.react import Thought
+from worker_agent.llm import LLMConfig
+from agentcore.plugins import get_ragas_collector
+from worker_agent.registry.base import Playbook, RegistryProvider, ToolContract
+from worker_agent.schemas.react import Thought
 
 log = structlog.get_logger()
 
