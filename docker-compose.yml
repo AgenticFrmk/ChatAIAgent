@@ -244,7 +244,7 @@ services:
   opa:
     platform: linux/amd64
     build:
-      context: ../sidecar/opa
+      context: ../AgentSidecar/opa
       dockerfile: Dockerfile
     command:
       - run
@@ -276,7 +276,7 @@ services:
       RUNTIME_WATCH_ROOT: "false"
       RUNTIME_IGNOREDOTFILES: "true"
     volumes:
-      - ../sidecar/ratelimit:/data/ratelimit/config:ro
+      - ../AgentSidecar/ratelimit:/data/ratelimit/config:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -287,7 +287,7 @@ services:
   envoy:
     image: envoyproxy/envoy:v1.31-latest
     volumes:
-      - ../sidecar/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ../AgentSidecar/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
     command: ["/usr/local/bin/envoy", "-c", "/etc/envoy/envoy.yaml", "--log-level", "info"]
     ports:
       - "10000:10000"
