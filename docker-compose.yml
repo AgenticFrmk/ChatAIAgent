@@ -1,5 +1,22 @@
 services:
 
+  # ── Control Plane DB ─────────────────────────────────────────────────────────
+  postgres-controlplane:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: controlplane
+      POSTGRES_USER: controlplane
+      POSTGRES_PASSWORD: ${CONTROLPLANE_DB_PASSWORD:-controlplane}
+    volumes:
+      - postgres_controlplane_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U controlplane -d controlplane"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - agentic
+
   # ── Auth Service DB ──────────────────────────────────────────────────────────
   postgres-auth:
     image: postgres:16-alpine
@@ -170,10 +187,13 @@ services:
       OPA_HTTP_URL: http://opa:8181
       CDS_PATH: /etc/envoy-dynamic/cds.yaml
       POLL_INTERVAL: "5"
+      DATABASE_URL: postgresql+asyncpg://controlplane:${CONTROLPLANE_DB_PASSWORD:-controlplane}@postgres-controlplane:5432/controlplane
     volumes:
       - ../AgentSidecar/envoy/dynamic:/etc/envoy-dynamic
       - /var/run/docker.sock:/var/run/docker.sock:ro
     depends_on:
+      postgres-controlplane:
+        condition: service_healthy
       consul:
         condition: service_healthy
     healthcheck:
@@ -208,6 +228,38 @@ services:
     networks:
       - agentic
 
+  # ── Egress proxy: sre-agent ──────────────────────────────────────────────────
+  # Per-agent Envoy sidecar that intercepts all outbound HTTP from sre-agent.
+  # Injects x-calling-agent: sre-agent + x-envoy-direction: egress, then calls
+  # OPA to evaluate the agent-to-tool policy before forwarding to the tool.
+  # New agents need only a copy of this block with a different AGENT_ID.
+  sre-egress:
+    build:
+      context: ../AgentSidecar/envoy
+      dockerfile: Dockerfile.egress
+    environment:
+      AGENT_ID: sre-agent
+    depends_on:
+      opa:
+        condition: service_started
+    restart: on-failure
+    networks:
+      - agentic
+
+  # ── Egress proxy: remediation-agent ──────────────────────────────────────────
+  remediation-egress:
+    build:
+      context: ../AgentSidecar/envoy
+      dockerfile: Dockerfile.egress
+    environment:
+      AGENT_ID: remediation-agent
+    depends_on:
+      opa:
+        condition: service_started
+    restart: on-failure
+    networks:
+      - agentic
+
   # ── Remediation Agent — destructive-ops planner (demo chain target) ──────────
   # Receives analysis findings from sre-agent and generates a remediation plan
   # that includes DESTRUCTIVE operations (kubectl delete, scale to 0, drain).
@@ -225,6 +277,13 @@ services:
     environment:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       LLM_MODEL: ${REMEDIATION_LLM_MODEL:-claude-haiku-4-5-20251001}
+      # Route outbound tool calls through the per-agent egress proxy.
+      # NO_PROXY bypasses the proxy for internal platform services (not tool calls).
+      HTTP_PROXY: http://remediation-egress:9000
+      NO_PROXY: auth-service,postgres-agentcore,postgres-registry,redis,consul,jaeger,slm-platform,policy-service,opa,agent-control-plane,envoy,localhost,127.0.0.1
+    depends_on:
+      remediation-egress:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8085/health')\" || exit 1"]
       interval: 10s
@@ -253,7 +312,13 @@ services:
         condition: service_healthy
       slm-platform:
         condition: service_healthy
+      sre-egress:
+        condition: service_started
     environment:
+      # Route outbound tool calls through the per-agent egress proxy.
+      # NO_PROXY bypasses the proxy for internal platform services (not tool calls).
+      HTTP_PROXY: http://sre-egress:9000
+      NO_PROXY: auth-service,registry-service,postgres-agentcore,postgres-registry,redis,consul,jaeger,slm-platform,policy-service,opa,agent-control-plane,envoy,localhost,127.0.0.1
       CHECKPOINTER_URL: postgresql://postgres:${AGENTCORE_DB_PASSWORD:-postgres}@postgres-agentcore:5432/agentcore
       REDIS_URL: redis://redis:6379/0
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
@@ -482,6 +547,7 @@ volumes:
   postgres_auth_data:
   postgres_registry_data:
   postgres_agentcore_data:
+  postgres_controlplane_data:
   postgres_slm_data:
   rsa_keys:
 
