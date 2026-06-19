@@ -93,7 +93,7 @@ export default function RemediationPage() {
   }, [])
 
   useEffect(() => {
-    fetch('/sre-result/clear', { method: 'DELETE' }).catch(() => {})
+    void poll()
     const id = setInterval(poll, 2000)
     const onVisible = () => { if (document.visibilityState === 'visible') poll() }
     document.addEventListener('visibilitychange', onVisible)
@@ -201,7 +201,7 @@ export default function RemediationPage() {
                 </div>
                 <div className="flex gap-3 text-gray-600">
                   <span className="text-gray-500 w-32">OPA rule</span>
-                  <span className="text-gray-400">target == "remediation-agent" ∧ caller == "sre-agent" ∧ chain_enabled</span>
+                  <span className="text-gray-400">domain == "agent-to-agent" ∧ subject == "sre-agent" ∧ resource == "remediation-agent" ∧ effect == "allow"</span>
                 </div>
               </div>
             </div>
@@ -213,8 +213,8 @@ export default function RemediationPage() {
                   <XCircle className="w-4 h-4" /> Chain Blocked by OPA
                 </p>
                 <p className="text-xs text-red-400">
-                  The <code className="bg-red-900/40 px-1 rounded">chain_enabled</code> flag is <strong>false</strong>.
-                  Go to <span className="text-violet-400">/demo</span> and flip the Policy Gate to ALLOW, then re-run.
+                  No allow policy found for sre-agent → remediation-agent.
+                  Go to <span className="text-violet-400">/control-plane</span> and add an agent-to-agent allow policy, then re-run.
                 </p>
               </div>
             )}

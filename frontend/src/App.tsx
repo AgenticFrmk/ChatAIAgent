@@ -13,7 +13,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/chat" element={<ChatPage />} />
-        <Route path="/demo" element={<PolicyPage />} />
+        <Route path="/control-plane" element={<PolicyPage />} />
         <Route path="/remediation" element={<RemediationPage />} />
         <Route path="/about" element={<AboutPage />} />
         <Route path="/analytics" element={<AnalyticsPage />} />

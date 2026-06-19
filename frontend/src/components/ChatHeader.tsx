@@ -81,7 +81,7 @@ export default function ChatHeader({ username, isRunning, awaitingReply, hasMess
         )}
 
         <button
-          onClick={() => window.open('/demo', '_blank')}
+          onClick={() => window.open('/control-plane', '_blank')}
           title="Agent Policy Control — Envoy + OPA"
           className="p-2 rounded-lg text-gray-600 hover:text-violet-600 hover:bg-gray-100 transition-colors"
         >
