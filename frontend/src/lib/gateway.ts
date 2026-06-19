@@ -35,9 +35,15 @@ export interface EventsResponse {
   total: number
 }
 
-async function _request<T>(path: string, init: RequestInit, token?: string): Promise<T> {
+async function _request<T>(
+  path: string,
+  init: RequestInit,
+  userToken?: string,
+  conversationToken?: string,
+): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (token) headers['Authorization'] = `Bearer ${token}`
+  if (userToken)         headers['Authorization']       = `Bearer ${userToken}`
+  if (conversationToken) headers['X-Conversation-Token'] = conversationToken
   const res = await fetch(`${GATEWAY_URL}${path}`, { ...init, headers })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
@@ -61,40 +67,107 @@ export async function login(username: string, password: string): Promise<string>
   return json.access_token
 }
 
-export async function invokeStream(message: string, token: string, autoApprove = false): Promise<string> {
-  const thread_id = `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const data = await _request<{ thread_id: string }>(
-    '/graph/invoke/stream',
-    { method: 'POST', body: JSON.stringify({ message, thread_id, auto_approve: autoApprove }) },
-    token,
+export async function createConversation(userToken: string): Promise<string> {
+  const data = await _request<{ conversation_token: string }>(
+    '/conversation',
+    { method: 'POST' },
+    userToken,
   )
-  return data.thread_id
+  return data.conversation_token
 }
 
-export async function resumeStream(threadId: string, response: string, token: string, autoApprove = false): Promise<void> {
+export async function invokeStream(
+  conversationToken: string,
+  message: string,
+  userToken: string,
+  autoApprove = false,
+): Promise<void> {
+  await _request(
+    '/graph/invoke/stream',
+    { method: 'POST', body: JSON.stringify({ message, auto_approve: autoApprove }) },
+    userToken,
+    conversationToken,
+  )
+}
+
+export async function resumeStream(
+  conversationToken: string,
+  response: string,
+  userToken: string,
+  autoApprove = false,
+): Promise<void> {
   await _request(
     '/graph/resume/stream',
-    { method: 'POST', body: JSON.stringify({ thread_id: threadId, response, auto_approve: autoApprove }) },
-    token,
+    { method: 'POST', body: JSON.stringify({ response, auto_approve: autoApprove }) },
+    userToken,
+    conversationToken,
   )
 }
 
-export async function getEvents(
-  threadId: string,
-  fromIndex: number,
-  token: string,
-): Promise<EventsResponse> {
-  return _request<EventsResponse>(
-    `/events/${encodeURIComponent(threadId)}?from=${fromIndex}`,
-    { method: 'GET' },
-    token,
-  )
+export async function openEventStream(
+  conversationToken: string,
+  userToken: string,
+  onEvent: (event: GatewayEvent) => void,
+  onDone: () => void,
+  onError: (err: Error) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  let res: Response
+  try {
+    res = await fetch(`${GATEWAY_URL}/stream`, {
+      method: 'GET',
+      headers: {
+        'Authorization':       `Bearer ${userToken}`,
+        'X-Conversation-Token': conversationToken,
+      },
+      signal,
+    })
+  } catch (err) {
+    if ((err as Error).name !== 'AbortError') onError(err as Error)
+    return
+  }
+
+  if (!res.ok) {
+    onError(new GatewayError(res.status, await res.text().catch(() => res.statusText)))
+    return
+  }
+
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const raw = line.slice(6).trim()
+        if (!raw) continue
+        try {
+          const event = JSON.parse(raw) as GatewayEvent
+          if (event.type === 'done') { onDone(); return }
+          if (event.type === 'error') { onError(new Error((event as any).detail ?? 'stream error')); return }
+          onEvent(event)
+        } catch { /* skip malformed lines */ }
+      }
+    }
+  } catch (err) {
+    if ((err as Error).name !== 'AbortError') onError(err as Error)
+  } finally {
+    reader.releaseLock()
+  }
 }
 
-export async function getHistory(token: string, limit = 100): Promise<Record<string, unknown>[]> {
+export async function getHistory(userToken: string, limit = 100): Promise<Record<string, unknown>[]> {
   return _request<Record<string, unknown>[]>(
     `/history?limit=${limit}`,
     { method: 'GET' },
-    token,
+    userToken,
   )
 }

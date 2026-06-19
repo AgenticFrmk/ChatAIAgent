@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import uuid
 from typing import Any, AsyncIterator
 
 import structlog
-from fastapi import FastAPI, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from pydantic import BaseModel
@@ -88,7 +89,7 @@ class SREAgent(BaseAgent):
         from worker_agent.registry.scalable import ScalableRegistryClient
         from worker_agent.tools.dispatcher import ToolDispatcher
         from sqlalchemy.ext.asyncio import create_async_engine
-        from worker_agent.persistence.models import PlanHistory
+        from worker_agent.persistence.models import PlanHistory, Conversation, ConversationThread
 
         checkpointer_url = os.environ["CHECKPOINTER_URL"]
         registry_url = os.environ.get("REGISTRY_SERVICE_URL", "")
@@ -97,7 +98,6 @@ class SREAgent(BaseAgent):
 
         self._llm_config = LLMConfig(
             default_llm=ChatAnthropic(model=_DEFAULT_LLM_MODEL),
-            reasoning_llm=ChatAnthropic(model="claude-opus-4-6"),
         )
 
         # Redis first — passed to registry and dispatcher for caching
@@ -136,6 +136,8 @@ class SREAgent(BaseAgent):
         engine = create_async_engine(agentcore_db_url)
         async with engine.begin() as conn:
             await conn.run_sync(PlanHistory.__table__.create, checkfirst=True)
+            await conn.run_sync(Conversation.__table__.create, checkfirst=True)
+            await conn.run_sync(ConversationThread.__table__.create, checkfirst=True)
         await engine.dispose()
 
         self._checkpointer_cm = AsyncPostgresSaver.from_conn_string(checkpointer_url)
@@ -170,13 +172,22 @@ class SREAgent(BaseAgent):
                 )
         return self._collectors.get(thread_id)
 
-    def _make_config(self, thread_id: str, auth: dict, auto_approve: bool = False) -> dict:
+    def _make_config(
+        self,
+        thread_id: str,
+        auth: dict,
+        auto_approve: bool = False,
+        conversation_id: str = "",
+        tenant_id: str = "",
+    ) -> dict:
         ragas = self._get_ragas_collector(thread_id)
         metrics = self._get_metrics_collector(thread_id)
         return {
             "recursion_limit": 100,
             "configurable": {
                 "thread_id":          thread_id,
+                "conversation_id":    conversation_id,
+                "tenant_id":          tenant_id,
                 "auth":               auth,
                 "registry":           self._registry,
                 "tool_dispatcher":    self._tool_dispatcher,
@@ -228,7 +239,16 @@ class SREAgent(BaseAgent):
 
 
     async def publish_stream(self, thread_id: str, input_data: Any, lg_config: dict) -> None:
-        channel = f"stream:{thread_id}"
+        conversation_id = lg_config["configurable"].get("conversation_id", "")
+        tenant_id       = lg_config["configurable"].get("tenant_id", "")
+        # Channel keyed on tenant_id + conversation_id for multi-tenant isolation.
+        # Redis list (events:{thread_id}) kept for replay on reconnect.
+        channel = f"conv:{tenant_id}:{conversation_id}"
+
+        def _pub(data: dict) -> str:
+            data["tenant_id"] = tenant_id  # included in every payload for per-event re-validation
+            return json.dumps(data, default=str)
+
         total_input_tokens = 0
         total_output_tokens = 0
         output_texts: list[str] = []
@@ -252,14 +272,11 @@ class SREAgent(BaseAgent):
                 if not node or event.get("name") != node:
                     continue
 
-                payload = json.dumps(
-                    {"node": node, "event": ev_type, "data": _serialise(event.get("data", {}))},
-                    default=str,
-                )
+                payload = _pub({"node": node, "event": ev_type, "data": _serialise(event.get("data", {}))})
                 await self._redis.publish(channel, payload)
                 await self._append_event(thread_id, payload)
 
-            usage_msg = json.dumps({
+            usage_msg = _pub({
                 "type": "usage",
                 "input_tokens": total_input_tokens,
                 "output_tokens": total_output_tokens,
@@ -276,24 +293,24 @@ class SREAgent(BaseAgent):
                 for task in graph_state.tasks:
                     for intr in getattr(task, "interrupts", []):
                         interrupt_payloads.append(_serialise(getattr(intr, "value", intr)))
-                terminal = json.dumps({
+                terminal = _pub({
                     "type": "interrupt",
                     "next": list(graph_state.next),
                     "interrupts": interrupt_payloads,
                 })
             else:
-                terminal = json.dumps({"type": "done"})
+                terminal = _pub({"type": "done"})
                 self._collectors.pop(thread_id, None)
 
             await self._redis.publish(channel, terminal)
             await self._append_event(thread_id, terminal)
-            log.info("sre-agent.stream.finished", thread_id=thread_id, interrupted=bool(graph_state.next))
+            log.info("sre-agent.stream.finished", thread_id=thread_id, conversation_id=conversation_id, interrupted=bool(graph_state.next))
 
         except Exception as exc:
-            log.error("sre-agent.stream.error", thread_id=thread_id, error=str(exc))
+            log.error("sre-agent.stream.error", thread_id=thread_id, conversation_id=conversation_id, error=str(exc))
             self._collectors.pop(thread_id, None)
             try:
-                err = json.dumps({"type": "error", "detail": str(exc)})
+                err = _pub({"type": "error", "detail": str(exc)})
                 await self._redis.publish(channel, err)
                 await self._append_event(thread_id, err)
             except Exception:
@@ -316,15 +333,11 @@ def _extract_auth_from_headers(headers) -> dict | None:
 
 class InvokeStreamRequest(BaseModel):
     message:      str
-    thread_id:    str
-    auth:         dict = {}
     auto_approve: bool = False
 
 
 class ResumeStreamRequest(BaseModel):
-    thread_id:    str
     response:     str
-    auth:         dict = {}
     auto_approve: bool = False
 
 
@@ -342,6 +355,113 @@ class ChainRequest(BaseModel):
     thread_id: str = ""
 
 
+# ── Conversation token helpers ────────────────────────────────────────────────
+
+_CONV_TOKEN_SECRET = os.environ.get("CONVERSATION_TOKEN_SECRET", "change-me-in-production")
+_CONV_TOKEN_ALG    = "HS256"
+_CONV_TOKEN_TTL    = 86400  # 24 hours
+
+
+def _sign_conversation_token(conversation_id: str, user_id: str, tenant_id: str) -> str:
+    import jwt, time
+    payload = {
+        "conversation_id": conversation_id,
+        "user_id":         user_id,
+        "tenant_id":       tenant_id,
+        "iat":             int(time.time()),
+        "exp":             int(time.time()) + _CONV_TOKEN_TTL,
+    }
+    return jwt.encode(payload, _CONV_TOKEN_SECRET, algorithm=_CONV_TOKEN_ALG)
+
+
+def _verify_conversation_token(token: str) -> dict:
+    import jwt
+    try:
+        return jwt.decode(token, _CONV_TOKEN_SECRET, algorithms=[_CONV_TOKEN_ALG])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Conversation token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid conversation token")
+
+
+def _extract_conversation_token(request: Request) -> dict:
+    raw = request.headers.get("x-conversation-token", "")
+    if not raw:
+        raise HTTPException(status_code=401, detail="X-Conversation-Token header required")
+    return _verify_conversation_token(raw)
+
+
+# ── ConversationThread helpers ────────────────────────────────────────────────
+
+async def _create_conversation(agent: "SREAgent", user_id: str, tenant_id: str) -> str:
+    from worker_agent.persistence.models import Conversation
+    conversation_id = str(uuid.uuid4())
+    async with agent._db_session_factory() as db:
+        db.add(Conversation(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            tenant_id=tenant_id,
+        ))
+        await db.commit()
+    return conversation_id
+
+
+async def _create_conversation_thread(
+    agent: "SREAgent", conversation_id: str, agent_id: str, started_by: str
+) -> str:
+    from worker_agent.persistence.models import ConversationThread
+    thread_id = str(uuid.uuid4())
+    async with agent._db_session_factory() as db:
+        db.add(ConversationThread(
+            id=str(uuid.uuid4()),
+            conversation_id=conversation_id,
+            agent_id=agent_id,
+            thread_id=thread_id,
+            started_by=started_by,
+            status="running",
+        ))
+        await db.commit()
+    return thread_id
+
+
+async def _get_active_thread_id(
+    agent: "SREAgent", conversation_id: str, agent_id: str
+) -> str:
+    from worker_agent.persistence.models import ConversationThread
+    from sqlalchemy import select
+    async with agent._db_session_factory() as db:
+        stmt = (
+            select(ConversationThread)
+            .where(ConversationThread.conversation_id == conversation_id)
+            .where(ConversationThread.agent_id == agent_id)
+            .where(ConversationThread.status == "running")
+            .order_by(ConversationThread.started_at.desc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        ctx = result.scalar_one_or_none()
+    if ctx is None:
+        raise HTTPException(status_code=404, detail="No active conversation thread found")
+    return str(ctx.thread_id)
+
+
+async def _complete_conversation_thread(
+    agent: "SREAgent", conversation_id: str, agent_id: str
+) -> None:
+    from worker_agent.persistence.models import ConversationThread
+    from sqlalchemy import update
+    async with agent._db_session_factory() as db:
+        stmt = (
+            update(ConversationThread)
+            .where(ConversationThread.conversation_id == conversation_id)
+            .where(ConversationThread.agent_id == agent_id)
+            .where(ConversationThread.status == "running")
+            .values(status="completed")
+        )
+        await db.execute(stmt)
+        await db.commit()
+
+
 # ── App factory ───────────────────────────────────────────────────────────────
 
 def create_app() -> FastAPI:
@@ -349,10 +469,33 @@ def create_app() -> FastAPI:
     app = serve(agent, port=int(os.environ.get("PORT", "8001")))
     configure_tracing("sre-agent", app)
 
+    @app.post("/conversation", status_code=201)
+    async def create_conversation(request: Request) -> dict:
+        auth = _extract_auth_from_headers(request.headers)
+        if not auth:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        conversation_id = await _create_conversation(agent, auth["user_id"], auth["tenant_id"])
+        conversation_token = _sign_conversation_token(
+            conversation_id, auth["user_id"], auth["tenant_id"]
+        )
+        log.info("conversation.created", conversation_id=conversation_id, user_id=auth["user_id"])
+        return {"conversation_token": conversation_token}
+
     @app.post("/graph/invoke/stream", status_code=202)
     async def graph_invoke_stream(req: InvokeStreamRequest, request: Request) -> dict:
-        auth = _extract_auth_from_headers(request.headers) or req.auth
-        lg_config = agent._make_config(req.thread_id, auth, req.auto_approve)
+        auth  = _extract_auth_from_headers(request.headers) or {}
+        conv  = _extract_conversation_token(request)
+        thread_id = await _create_conversation_thread(
+            agent,
+            conversation_id=conv["conversation_id"],
+            agent_id=agent.name,
+            started_by=conv["user_id"],
+        )
+        lg_config = agent._make_config(
+            thread_id, auth, req.auto_approve,
+            conversation_id=conv["conversation_id"],
+            tenant_id=conv["tenant_id"],
+        )
         if agent._redis:
             try:
                 await agent._redis.delete("remediation:latest")
@@ -360,41 +503,122 @@ def create_app() -> FastAPI:
                 pass
         asyncio.create_task(
             agent.publish_stream(
-                req.thread_id,
+                thread_id,
                 {"messages": [HumanMessage(content=req.message)]},
                 lg_config,
             ),
-            name=f"stream-invoke-{req.thread_id[:8]}",
+            name=f"stream-invoke-{thread_id[:8]}",
         )
-        log.info("sre-agent.invoke_stream.started", thread_id=req.thread_id)
-        return {"thread_id": req.thread_id}
+        log.info("sre-agent.invoke_stream.started", thread_id=thread_id, conversation_id=conv["conversation_id"])
+        return {"status": "started"}
 
     @app.post("/graph/resume/stream", status_code=202)
     async def graph_resume_stream(req: ResumeStreamRequest, request: Request) -> dict:
         from langgraph.types import Command
-        auth = _extract_auth_from_headers(request.headers) or req.auth
-        lg_config = agent._make_config(req.thread_id, auth, req.auto_approve)
+        auth = _extract_auth_from_headers(request.headers) or {}
+        conv = _extract_conversation_token(request)
+        thread_id = await _get_active_thread_id(
+            agent,
+            conversation_id=conv["conversation_id"],
+            agent_id=agent.name,
+        )
+        lg_config = agent._make_config(
+            thread_id, auth, req.auto_approve,
+            conversation_id=conv["conversation_id"],
+            tenant_id=conv["tenant_id"],
+        )
 
         # Re-seed the metrics collector when resuming after a server restart.
         # On restart _collectors is wiped, so the new collector has _run_id=None
         # and collector.finish() would bail early without posting to SLMPlatform.
-        collector = agent._get_metrics_collector(req.thread_id)
+        collector = agent._get_metrics_collector(thread_id)
         if collector is not None and collector._run_id is None:
             try:
-                state = await agent._graph.aget_state({"configurable": {"thread_id": req.thread_id}})
+                state = await agent._graph.aget_state({"configurable": {"thread_id": thread_id}})
                 intent = (state.values or {}).get("intent")
                 if intent and getattr(intent, "domain", None):
-                    await collector.start(req.thread_id, intent.domain)
-                    log.info("sre-agent.resume_stream.collector_reseeded", thread_id=req.thread_id, domain=intent.domain)
+                    await collector.start(thread_id, intent.domain)
+                    log.info("sre-agent.resume_stream.collector_reseeded", thread_id=thread_id, domain=intent.domain)
             except Exception as exc:
                 log.warning("sre-agent.resume_stream.collector_reseed_failed", error=str(exc))
 
         asyncio.create_task(
-            agent.publish_stream(req.thread_id, Command(resume=req.response), lg_config),
-            name=f"stream-resume-{req.thread_id[:8]}",
+            agent.publish_stream(thread_id, Command(resume=req.response), lg_config),
+            name=f"stream-resume-{thread_id[:8]}",
         )
-        log.info("sre-agent.resume_stream.started", thread_id=req.thread_id)
+        log.info("sre-agent.resume_stream.started", thread_id=thread_id, conversation_id=conv["conversation_id"])
         return {"status": "resumed"}
+
+    @app.get("/stream")
+    async def stream_events(request: Request) -> StreamingResponse:
+        import time
+        from worker_agent.persistence.models import Conversation
+
+        # 1. Verify conversation token
+        conv            = _extract_conversation_token(request)
+        conversation_id = conv["conversation_id"]
+        user_id         = conv["user_id"]
+        tenant_id       = conv["tenant_id"]
+
+        # 2. DB ownership check — reject if conversation doesn't belong to this user+tenant
+        async with agent._db_session_factory() as db:
+            row: Conversation | None = await db.get(Conversation, conversation_id)
+        if row is None or row.user_id != user_id or row.tenant_id != tenant_id:
+            raise HTTPException(status_code=403, detail="Not authorised for this conversation")
+
+        channel = f"conv:{tenant_id}:{conversation_id}"
+
+        async def generate():
+            pubsub = agent._redis.pubsub()
+            await pubsub.subscribe(channel)
+            last_validated = time.time()
+            log.info("sse.subscribed", channel=channel, conversation_id=conversation_id)
+            try:
+                async for message in pubsub.listen():
+                    # Re-validate DB ownership every 5 minutes
+                    if time.time() - last_validated > 300:
+                        async with agent._db_session_factory() as db:
+                            row = await db.get(Conversation, conversation_id)
+                        if row is None or row.user_id != user_id or row.tenant_id != tenant_id:
+                            log.warning("sse.ownership_revoked", conversation_id=conversation_id)
+                            break
+                        last_validated = time.time()
+
+                    if message["type"] != "message":
+                        continue
+
+                    raw = message["data"]
+                    try:
+                        payload = json.loads(raw)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+
+                    # Per-event tenant re-validation — defense in depth
+                    if payload.get("tenant_id") != tenant_id:
+                        log.warning("sse.tenant_mismatch", conversation_id=conversation_id)
+                        continue
+
+                    yield f"data: {raw}\n\n"
+
+                    if payload.get("type") in ("done", "error"):
+                        break
+
+                    if await request.is_disconnected():
+                        break
+            finally:
+                await pubsub.unsubscribe(channel)
+                await pubsub.aclose()
+                log.info("sse.unsubscribed", channel=channel, conversation_id=conversation_id)
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control":    "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection":       "keep-alive",
+            },
+        )
 
     @app.post("/graph/ping/stream")
     async def graph_ping_stream(req: PingRequest) -> StreamingResponse:
@@ -594,8 +818,14 @@ def create_app() -> FastAPI:
             await agent._redis.delete("remediation:latest")
         return {"status": "cleared"}
 
-    @app.get("/events/{thread_id}")
-    async def get_events(thread_id: str, from_index: int = Query(0, alias="from")) -> dict:
+    @app.get("/events")
+    async def get_events(request: Request, from_index: int = Query(0, alias="from")) -> dict:
+        conv = _extract_conversation_token(request)
+        thread_id = await _get_active_thread_id(
+            agent,
+            conversation_id=conv["conversation_id"],
+            agent_id=agent.name,
+        )
         key = f"events:{thread_id}"
         raw_list = await agent._redis.lrange(key, from_index, -1)
         events = []
