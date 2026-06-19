@@ -11,7 +11,7 @@ import CompactionBanner from '../components/CompactionBanner'
 export default function ChatPage() {
   const navigate = useNavigate()
   const { session, clearSession } = useSession()
-  const { messages, awaitingReply, placeholder, isRunning, chainLabel, budget, budgetHistory, send, reset, autoApprove, setAutoApprove } = useChatThread(
+  const { messages, awaitingReply, placeholder, isRunning, chainLabel, budget, budgetHistory, initConversation, send, reset, autoApprove, setAutoApprove } = useChatThread(
     session?.token ?? null,
   )
 
@@ -22,6 +22,13 @@ export default function ChatPage() {
   useEffect(() => {
     if (!session) navigate('/login', { replace: true })
   }, [session, navigate])
+
+  // Open SSE connection as soon as the session is available —
+  // before the user types anything so the channel is ready when the graph starts.
+  useEffect(() => {
+    if (session?.token) void initConversation()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // intentionally runs once on mount; initConversation reads token from ref
 
   useEffect(() => {
     if (!budget) return
@@ -36,6 +43,11 @@ export default function ChatPage() {
     }
     if (!compacted) prevCompacted.current = false
   }, [budget])
+
+  const handleReset = async () => {
+    reset()
+    await initConversation()
+  }
 
   const handleLogout = () => {
     reset()
@@ -56,7 +68,7 @@ export default function ChatPage() {
         budgetHistory={budgetHistory}
         autoApprove={autoApprove}
         onAutoApproveToggle={setAutoApprove}
-        onReset={reset}
+        onReset={handleReset}
         onLogout={handleLogout}
       />
 

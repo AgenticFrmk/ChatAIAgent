@@ -28,7 +28,6 @@ class Plan(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     thread_id: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False)
-    cot_trace: Mapped[str | None] = mapped_column(Text, nullable=True)
     data: Mapped[Any | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, server_default="now()"
@@ -90,6 +89,43 @@ class Entity(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, server_default="now()"
+    )
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    conversation_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    tenant_id: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default="now()"
+    )
+
+    __table_args__ = (
+        Index("idx_conversations_user_id", "user_id"),
+        Index("idx_conversations_tenant_id", "tenant_id"),
+    )
+
+
+class ConversationThread(Base):
+    __tablename__ = "conversation_threads"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    conversation_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("conversations.conversation_id"), nullable=False
+    )
+    agent_id: Mapped[str] = mapped_column(Text, nullable=False)
+    thread_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    started_by: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="'running'")
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default="now()"
+    )
+
+    __table_args__ = (
+        Index("idx_conversation_threads_conversation_id", "conversation_id"),
+        Index("idx_conversation_threads_agent_status", "agent_id", "status"),
     )
 
 

@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { invokeStream, resumeStream, getEvents } from '../lib/gateway'
+import { createConversation, invokeStream, resumeStream, openEventStream } from '../lib/gateway'
 import { mapGatewayEvent } from '../lib/eventMapper'
 import {
   formatEntities,
@@ -12,17 +12,18 @@ import {
 import type { BudgetState, ChatMessage, EntityMap, HitlKind, PlanStep, ReportData, Tao } from '../lib/types'
 
 export interface UseChatThreadReturn {
-  messages:      ChatMessage[]
-  awaitingReply: boolean
-  placeholder:   string
-  isRunning:     boolean
-  chainLabel:    string | null
-  budget:        BudgetState | null
-  budgetHistory: { tokens: number; ts: number }[]
-  send:          (text: string) => Promise<void>
-  reset:         () => void
-  autoApprove:   boolean
-  setAutoApprove: (v: boolean) => void
+  messages:         ChatMessage[]
+  awaitingReply:    boolean
+  placeholder:      string
+  isRunning:        boolean
+  chainLabel:       string | null
+  budget:           BudgetState | null
+  budgetHistory:    { tokens: number; ts: number }[]
+  initConversation: () => Promise<void>
+  send:             (text: string) => Promise<void>
+  reset:            () => void
+  autoApprove:      boolean
+  setAutoApprove:   (v: boolean) => void
 }
 
 function uid() {
@@ -37,7 +38,7 @@ function make(
   return { id: uid(), role, kind, timestamp: Date.now(), text }
 }
 
-export function useChatThread(token: string | null): UseChatThreadReturn {
+export function useChatThread(userToken: string | null): UseChatThreadReturn {
   const [messages, setMessages]         = useState<ChatMessage[]>([])
   const [isRunning, setIsRunning]       = useState(false)
   const [hitlKind, setHitlKind]         = useState<HitlKind>(null)
@@ -45,10 +46,9 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
   const [budgetHistory, setBudgetHistory] = useState<{ tokens: number; ts: number }[]>([])
   const [autoApprove, setAutoApprove]   = useState(false)
 
-  const threadIdRef      = useRef<string | null>(null)
-  const lastSeenRef      = useRef(0)
+  const conversationTokenRef = useRef<string | null>(null)
   const abortRef         = useRef<AbortController | null>(null)
-  const tokenRef         = useRef(token)
+  const userTokenRef         = useRef(userToken)
   const autoApproveRef   = useRef(autoApprove)
   const thinkingIdRef    = useRef<string | null>(null)
   const executingIdRef   = useRef<string | null>(null)
@@ -58,7 +58,7 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
   const chainOpaRef      = useRef<string>('UNKNOWN')
 
   const [chainLabel, setChainLabel] = useState<string | null>(null)
-  tokenRef.current       = token
+  userTokenRef.current       = userToken
   autoApproveRef.current = autoApprove
 
   // ── replaceThinking ────────────────────────────────────────────────────
@@ -234,93 +234,74 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     }
   }, [replaceThinking, appendStepLine, replaceOrAppendStepLine])
 
-  // ── startPolling ────────────────────────────────────────────────────────
-  const startPolling = useCallback((threadId: string) => {
+  // ── startStreaming ──────────────────────────────────────────────────────
+  // ── startStreaming ──────────────────────────────────────────────────────
+  // Opens a long-lived SSE connection to GET /stream (via nginx → Envoy → sre-agent).
+  // The same connection receives events for all invocations within the conversation —
+  // it stays open through HITL interrupts and only closes on 'done' or 'error'.
+  const startStreaming = useCallback(() => {
     abortRef.current?.abort()
     const ctrl = new AbortController()
     abortRef.current = ctrl
-    lastSeenRef.current = 0
-    let lastProgressAt = Date.now()
-    const STALE_TIMEOUT_MS = 60_000
 
-    const tick = async () => {
-      if (ctrl.signal.aborted) return
-      try {
-        const { events } = await getEvents(threadId, lastSeenRef.current, tokenRef.current!)
-        for (const { payload } of events) {
-          for (const mapped of mapGatewayEvent(payload)) {
-            if (mapped.name === 'done') { handle('done', {}); ctrl.abort(); return }
-            handle(mapped.name, mapped.data)
-          }
+    openEventStream(
+      conversationTokenRef.current!,
+      userTokenRef.current!,
+      (event) => {
+        for (const mapped of mapGatewayEvent(event)) {
+          handle(mapped.name, mapped.data)
         }
-        if (events.length > 0) {
-          lastSeenRef.current += events.length
-          lastProgressAt = Date.now()
-        } else if (Date.now() - lastProgressAt > STALE_TIMEOUT_MS) {
-          ctrl.abort()
-          handle('error', { message: 'Agent stream timed out — start a new chat to retry.' })
-          return
-        }
-      } catch (err) {
-        if ((err as Error).name === 'AbortError') return
-      }
-    }
-
-    const id = setInterval(tick, 2000)
-    void tick()
-    ctrl.signal.addEventListener('abort', () => clearInterval(id))
+      },
+      () => handle('done', {}),
+      (err) => handle('error', { message: err.message }),
+      ctrl.signal,
+    ).catch(() => {}) // errors already routed to onError callback above
   }, [handle])
 
+  // ── initConversation ───────────────────────────────────────────────────
+  // Called once when the chat UI mounts (or on new chat). Creates the conversation
+  // on the backend, then opens the SSE connection so it is ready before any graph
+  // invocation starts — eliminating the race between invoke and SSE subscribe.
+  const initConversation = useCallback(async () => {
+    if (!userTokenRef.current) return
+    const conversationToken = await createConversation(userTokenRef.current)
+    conversationTokenRef.current = conversationToken
+    startStreaming()
+  }, [startStreaming])
+
   // ── send ────────────────────────────────────────────────────────────────
-  // Handles both cases:
-  //   hitlKind !== null → resumeStream (agent is waiting for this reply)
-  //   hitlKind === null → invokeStream (new session; resets if one existed)
+  // hitlKind !== null  →  resumeStream (agent paused at HITL, waiting for reply)
+  // hitlKind === null  →  invokeStream (new graph invocation on existing conversation)
+  // SSE connection is already open from initConversation — not managed here.
   const send = useCallback(async (text: string) => {
-    if (!tokenRef.current || !text.trim()) return
-
-    const isResuming = threadIdRef.current !== null && hitlKind !== null
-
-    // Tear down a completed session before starting fresh
-    if (!isResuming && threadIdRef.current !== null) {
-      abortRef.current?.abort()
-      abortRef.current = null
-      threadIdRef.current = null
-      thinkingIdRef.current = null
-      executingIdRef.current = null
-      lastSeenRef.current = 0
-    }
+    if (!userTokenRef.current || !conversationTokenRef.current || !text.trim()) return
 
     const userMsg = make('user', 'text', text)
     thinkingIdRef.current = null
     executingIdRef.current = null
-
     setHitlKind(null)
     setIsRunning(true)
-    // Resume: append user message. New session: start fresh with just the user message.
-    // ThinkingBubble is rendered by ChatThread while isRunning && !awaitingReply.
-    setMessages(isResuming ? prev => [...prev, userMsg] : [userMsg])
 
-    if (isResuming) {
-      await resumeStream(threadIdRef.current!, text, tokenRef.current, autoApproveRef.current)
+    if (hitlKind !== null) {
+      setMessages(prev => [...prev, userMsg])
+      await resumeStream(conversationTokenRef.current!, text, userTokenRef.current!, autoApproveRef.current)
     } else {
-      const threadId = await invokeStream(text, tokenRef.current, autoApproveRef.current)
-      threadIdRef.current = threadId
-      startPolling(threadId)
+      setMessages([userMsg])
+      await invokeStream(conversationTokenRef.current!, text, userTokenRef.current!, autoApproveRef.current)
     }
-  }, [hitlKind, startPolling])
+  }, [hitlKind])
 
   // ── reset ───────────────────────────────────────────────────────────────
   const reset = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
-    threadIdRef.current = null
+    conversationTokenRef.current = null
     thinkingIdRef.current = null
     executingIdRef.current = null
     prevCompactedRef.current = false
     chainActiveRef.current = false
     pendingReportRef.current = null
     chainOpaRef.current = 'UNKNOWN'
-    lastSeenRef.current = 0
     setMessages([])
     setIsRunning(false)
     setHitlKind(null)
@@ -342,5 +323,5 @@ export function useChatThread(token: string | null): UseChatThreadReturn {
     : hitlKind === 'policy_review'    ? "Type 'approve' to proceed or 'reject' to cancel…"
     : 'Describe the incident…'
 
-  return { messages, awaitingReply, placeholder, isRunning, chainLabel, budget, budgetHistory, send, reset, autoApprove, setAutoApprove }
+  return { messages, awaitingReply, placeholder, isRunning, chainLabel, budget, budgetHistory, initConversation, send, reset, autoApprove, setAutoApprove }
 }
